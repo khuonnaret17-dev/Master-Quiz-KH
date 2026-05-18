@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSystemAdmin() {
+      return isSignedIn() && 
+             request.auth.token.email == 'khuonnaret17@mekong.edu.kh' && 
+             isEmailVerified();
+    }
+
+    // Role check - expensive but secure for admin operations
+    function isAdmin() {
+      return isSystemAdmin() || 
+             (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN');
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidMinistry(data) {
+      return data.keys().hasAll(['id', 'name', 'khmerName', 'logo']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 256 &&
+             data.khmerName is string && data.khmerName.size() <= 256 &&
+             data.logo is string && data.logo.size() <= 2048;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string && data.uid.size() >= 20 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.role in ['ADMIN', 'MEMBER'];
+    }
+
+    // --- Collections ---
+
+    match /ministries/{ministryId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidId(ministryId) && isValidMinistry(incoming());
+      allow delete: if isAdmin() && isValidId(ministryId);
+    }
+
+    match /users/{userId} {
+      allow read, write: if isSystemAdmin();
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      
+      allow create: if isSignedIn() && request.auth.uid == userId && 
+                       isValidUser(incoming()) &&
+                       (incoming().role == 'MEMBER' || (incoming().role == 'ADMIN' && isSystemAdmin())) &&
+                       incoming().createdAt == request.time &&
+                       incoming().updatedAt == request.time;
+      
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin()) &&
+                       (
+                         // User updating their own progress
+                         (request.auth.uid == userId && 
+                          incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'updatedAt']) &&
+                          (!('progress' in incoming()) || incoming().progress is map) &&
+                          incoming().updatedAt == request.time) ||
+                         
+                         // Admin updating role or other fields
+                         (isAdmin() && incoming().updatedAt == request.time) ||
+
+                         // System Admin self-promotion sync
+                         (isSystemAdmin() && request.auth.uid == userId && 
+                          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt']) &&
+                          incoming().role == 'ADMIN' &&
+                          incoming().updatedAt == request.time)
+                       );
+      
+      allow delete: if isAdmin();
+    }
+
+    match /quizzes/{quizId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /test/{docId} {
+      allow get: if isSignedIn();
+    }
+  }
+}

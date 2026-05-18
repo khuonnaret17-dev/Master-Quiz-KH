@@ -1,0 +1,112 @@
+{
+  "entities": {
+    "Ministry": {
+      "title": "Ministry",
+      "description": "Information about a Cambodian Ministry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "khmerName": { "type": "string" },
+        "description": { "type": "string" },
+        "logo": { "type": "string", "format": "uri" },
+        "color": { "type": "string" },
+        "details": { "type": "string" },
+        "mcqs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "category": { "type": "string" },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": { "type": "string" },
+                    "options": { "type": "array", "items": { "type": "string" } },
+                    "correctIndex": { "type": "integer" },
+                    "explanation": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "shortAnswers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "category": { "type": "string" },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": { "type": "string" },
+                    "answer": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "terms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "term": { "type": "string" },
+              "definition": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["id", "name", "khmerName", "logo"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "A quiz question about ministries",
+      "type": "object",
+      "properties": {
+        "question": { "type": "string" },
+        "options": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "correctIndex": { "type": "integer" },
+        "explanation": { "type": "string" }
+      },
+      "required": ["question", "options", "correctIndex"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile and progress",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["ADMIN", "MEMBER"] },
+        "progress": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "ministries/{ministryId}": {
+      "schema": "Ministry",
+      "description": "Collection of Cambodian ministries"
+    },
+    "quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "Collection of quizzes about ministries"
+    },
+    "users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles and progress"
+    }
+  }
+}

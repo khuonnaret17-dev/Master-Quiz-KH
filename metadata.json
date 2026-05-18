@@ -1,0 +1,6 @@
+{
+  "name": "កម្មវិធីត្រៀមប្រឡងក្របខ័ណ្ឌ",
+  "description": "An application providing information and quizzes about various Cambodian ministries, including logos and descriptions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
