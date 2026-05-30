@@ -14,7 +14,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { Ministry, Progress, UserRole } from './types';
+import { Ministry, Progress, UserRole, PdfDocument } from './types';
 
 const MINISTRIES_COLLECTION = 'ministries';
 const USERS_COLLECTION = 'users';
@@ -72,6 +72,28 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 export const firestoreService = {
+  // --- Documents ---
+  async getDocuments(): Promise<PdfDocument[]> {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'documents'));
+      return querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as PdfDocument));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, 'documents');
+      return [];
+    }
+  },
+
+  async getDocumentsByMinistry(ministryId: string): Promise<PdfDocument[]> {
+    try {
+      const q = query(collection(db, 'documents'), where('ministryId', '==', ministryId));
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as PdfDocument));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `documents for ministry ${ministryId}`);
+      return [];
+    }
+  },
+
   // --- Ministries ---
   async getMinistries(): Promise<Ministry[]> {
     try {

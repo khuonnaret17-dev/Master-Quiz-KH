@@ -29,8 +29,7 @@ service cloud.firestore {
 
     function isSystemAdmin() {
       return isSignedIn() && 
-             request.auth.token.email == 'khuonnaret17@mekong.edu.kh' && 
-             isEmailVerified();
+             request.auth.token.email == 'khuonnaret17@mekong.edu.kh';
     }
 
     // Role check - expensive but secure for admin operations
@@ -60,9 +59,7 @@ service cloud.firestore {
     // --- Collections ---
 
     match /ministries/{ministryId} {
-      allow read: if true;
-      allow create, update: if isAdmin() && isValidId(ministryId) && isValidMinistry(incoming());
-      allow delete: if isAdmin() && isValidId(ministryId);
+      allow read, write: if true;
     }
 
     match /users/{userId} {
@@ -78,10 +75,16 @@ service cloud.firestore {
       
       allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin()) &&
                        (
-                         // User updating their own progress
+                         // User updating progress, premium, or linkedBank fields
                          (request.auth.uid == userId && 
-                          incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'updatedAt']) &&
+                          (
+                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'updatedAt']) ||
+                            incoming().diff(existing()).affectedKeys().hasOnly(['isPremium', 'premiumUntil', 'linkedBank', 'updatedAt']) ||
+                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'isPremium', 'premiumUntil', 'linkedBank', 'updatedAt'])
+                          ) &&
                           (!('progress' in incoming()) || incoming().progress is map) &&
+                          (!('isPremium' in incoming()) || incoming().isPremium is bool) &&
+                          (!('linkedBank' in incoming()) || (incoming().linkedBank is map || incoming().linkedBank == null)) &&
                           incoming().updatedAt == request.time) ||
                          
                          // Admin updating role or other fields
@@ -98,8 +101,11 @@ service cloud.firestore {
     }
 
     match /quizzes/{quizId} {
+      allow read, write: if true;
+    }
+
+    match /documents/{documentId} {
       allow read: if true;
-      allow write: if isAdmin();
     }
 
     match /test/{docId} {

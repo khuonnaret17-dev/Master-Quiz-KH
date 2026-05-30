@@ -1,18 +1,27 @@
 'use client';
 
 import { useFirebase } from "@/lib/FirebaseProvider";
-import { LogIn, LogOut, User as UserIcon, ChevronDown, Brain } from "lucide-react";
+import { LogIn, LogOut, User as UserIcon, ChevronDown, Brain, Crown, X, Lock, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import SafeImage from "@/components/SafeImage";
 import Link from "next/link";
 
 export function UserNav() {
-  const { user, login, logout, authLoading, isLoggingIn, userRole } = useFirebase();
+  const { user, logout, authLoading, isLoggingIn, userRole, isPremium, loginCustomMember, registerCustomMember, loginCustomAdmin } = useFirebase();
   const [isOpen, setIsOpen] = useState(false);
-  const [showLoginOptions, setShowLoginOptions] = useState(false);
-  const [adminCode, setAdminCode] = useState('');
-  const [selectedMode, setSelectedMode] = useState<'MEMBER' | 'ADMIN' | null>(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Modal Login States
+  const [activeTab, setActiveTab] = useState<'MEMBER' | 'ADMIN'>('MEMBER');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [conPassword, setConPassword] = useState("");
+  const [adminPass, setAdminPass] = useState("");
+  const [localAuthError, setLocalAuthError] = useState<string | null>(null);
+  const [localAuthSuccess, setLocalAuthSuccess] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (authLoading) {
     return (
@@ -20,85 +29,257 @@ export function UserNav() {
     );
   }
 
+  const handleModalAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalAuthError(null);
+    setLocalAuthSuccess(null);
+    setIsSubmitting(true);
+
+    try {
+      if (activeTab === 'MEMBER') {
+        if (isRegistering) {
+          if (password !== conPassword) {
+            setLocalAuthError('លេខសម្ងាត់ពីរដងមិនដូចគ្នាទេ!');
+            setIsSubmitting(false);
+            return;
+          }
+          const res = await registerCustomMember(username, password);
+          if (res.success) {
+            setLocalAuthSuccess('ចុះឈ្មោះបានជោគជ័យ!');
+            setTimeout(() => {
+              setShowLoginModal(false);
+              setLocalAuthSuccess(null);
+            }, 1000);
+          } else {
+            setLocalAuthError(res.error || 'មានបញ្ហាចុះឈ្មោះគណនី');
+          }
+        } else {
+          const res = await loginCustomMember(username, password);
+          if (res.success) {
+            setLocalAuthSuccess('បានចូលប្រើប្រាស់ជោគជ័យ!');
+            setTimeout(() => {
+              setShowLoginModal(false);
+              setLocalAuthSuccess(null);
+            }, 1000);
+          } else {
+            setLocalAuthError(res.error || 'ឈ្មោះគណនី ឬលេខសម្ងាត់មិនត្រឹមត្រូវ');
+          }
+        }
+      } else {
+        const res = await loginCustomAdmin(adminPass);
+        if (res.success) {
+          setLocalAuthSuccess('បានចូលជា Admin ជោគជ័យ!');
+          setTimeout(() => {
+            setShowLoginModal(false);
+            setLocalAuthSuccess(null);
+          }, 1000);
+        } else {
+          setLocalAuthError(res.error || 'លេខសម្ងាត់អ្នកគ្រប់គ្រងមិនត្រឹមត្រូវ');
+        }
+      }
+    } catch (err: any) {
+      setLocalAuthError(err.message || 'មានបញ្ហាបច្ចេកទេស');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (!user) {
-    if (showLoginOptions) {
-      return (
-        <div className="flex flex-col gap-2 bg-white p-3 rounded-2xl shadow-xl border border-slate-100 min-w-[240px]">
-          {!selectedMode ? (
-            <>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 mb-1">ជ្រើសរើសប្រភេទគណនី</p>
-              <button
-                onClick={() => login('MEMBER')}
-                className="flex items-center gap-3 px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-all"
-              >
-                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                  <UserIcon className="w-4 h-4" />
-                </div>
-                ចូលជាសមាជិក (Member)
-              </button>
-              <button
-                onClick={() => setSelectedMode('ADMIN')}
-                className="flex items-center gap-3 px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 rounded-xl transition-all"
-              >
-                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-                  <UserIcon className="w-4 h-4" />
-                </div>
-                អ្នកគ្រប់គ្រង (Admin)
-              </button>
-              <button 
-                onClick={() => setShowLoginOptions(false)}
-                className="text-[10px] text-slate-400 font-bold uppercase mt-1 hover:text-slate-600 transition-colors"
-              >
-                បោះបង់ (Cancel)
-              </button>
-            </>
-          ) : (
-            <div className="p-1 space-y-3">
-              <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest px-1">បញ្ចូលលេខកូដអ្នកគ្រប់គ្រង</p>
-              <input 
-                type="password"
-                placeholder="លេខកូដ (Admin Code)"
-                value={adminCode}
-                onChange={(e) => setAdminCode(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500 transition-all font-mono"
-                autoFocus
+    return (
+      <>
+        <button
+          onClick={() => {
+            setLocalAuthError(null);
+            setLocalAuthSuccess(null);
+            setShowLoginModal(true);
+          }}
+          disabled={isLoggingIn}
+          className="group relative flex items-center gap-2 px-7 py-2.5 bg-gradient-to-r from-[#094C72] to-[#0A5A8A] text-white rounded-full transition-all duration-300 text-sm font-bold font-khmer overflow-hidden border border-[#166EAA] shadow-md hover:shadow-lg hover:shadow-[#094C72]/30 hover:-translate-y-0.5"
+        >
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M0 0h20v20H0V0zm10 17L3 10l7-7 7 7-7 7z\' fill=\'%23D4AF37\' fill-opacity=\'0.05\' fill-rule=\'evenodd\'/%3E%3C/svg%3E')] opacity-50 pointer-events-none" />
+          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full duration-1000 transition-all ease-in-out pointer-events-none" />
+          <LogIn className="w-4 h-4 text-[#D4AF37] relative z-10 transition-transform group-hover:-translate-x-1" />
+          <span className="relative z-10">ចូលគណនី</span>
+        </button>
+
+        {/* Modal Overlay */}
+        <AnimatePresence>
+          {showLoginModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowLoginModal(false)}
+                className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
               />
-              <div className="flex gap-2">
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                className="relative bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-100 z-10 flex flex-col space-y-5"
+              >
+                {/* Close Button */}
                 <button
-                  onClick={() => login('ADMIN', adminCode)}
-                  className="flex-1 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-all"
+                  onClick={() => setShowLoginModal(false)}
+                  className="absolute right-4 top-4 p-1.5 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
                 >
-                  យល់ព្រម
+                  <X className="w-4 h-4 text-slate-400" />
                 </button>
-                <button
-                  onClick={() => {
-                    setSelectedMode(null);
-                    setAdminCode('');
-                  }}
-                  className="flex-1 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all"
-                >
-                  ត្រឡប់ក្រោយ
-                </button>
-              </div>
+
+                {/* Header Title */}
+                <div className="text-center space-y-1 pr-6">
+                  <h3 className="text-lg font-black text-slate-900 font-khmer">
+                    សូមចូលគណនីរបស់អ្នក
+                  </h3>
+                  <p className="text-xs text-slate-400 font-khmer">
+                    ត្រៀមប្រឡងក្របខ័ណ្ឌរដ្ឋផ្លូវការ
+                  </p>
+                </div>
+
+                {/* Tab Switcher */}
+                <div className="bg-slate-100 p-1 rounded-2xl flex gap-1 w-full border border-slate-200/50">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('MEMBER');
+                      setLocalAuthError(null);
+                      setLocalAuthSuccess(null);
+                    }}
+                    className={`flex-1 py-2 text-center rounded-xl text-xs font-black transition-all font-khmer cursor-pointer ${
+                      activeTab === 'MEMBER'
+                        ? 'bg-[#094C72] text-white shadow-sm'
+                        : 'text-slate-600 hover:text-slate-850'
+                    }`}
+                  >
+                    ចូលជាសមាជិក
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('ADMIN');
+                      setLocalAuthError(null);
+                      setLocalAuthSuccess(null);
+                    }}
+                    className={`flex-1 py-2 text-center rounded-xl text-xs font-black transition-all font-khmer cursor-pointer ${
+                      activeTab === 'ADMIN'
+                        ? 'bg-[#094C72] text-white shadow-sm'
+                        : 'text-slate-600 hover:text-slate-850'
+                    }`}
+                  >
+                    ចូលជាអ្នកគ្រប់គ្រង
+                  </button>
+                </div>
+
+                <form onSubmit={handleModalAuth} className="space-y-4">
+                  {localAuthError && (
+                    <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-[11px] font-bold font-khmer flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{localAuthError}</span>
+                    </div>
+                  )}
+                  {localAuthSuccess && (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-[11px] font-bold font-khmer flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>{localAuthSuccess}</span>
+                    </div>
+                  )}
+
+                  {activeTab === 'MEMBER' ? (
+                    <>
+                      <div className="space-y-1 text-left">
+                        <label className="text-[10px] font-bold text-slate-500 font-khmer ml-1">ឈ្មោះអ្នកប្រើប្រាស់ (User Name)</label>
+                        <div className="relative">
+                          <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                          <input 
+                            type="text"
+                            required
+                            placeholder="ឈ្មោះគណនី"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#094C72] transition-all font-sans"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1 text-left">
+                        <label className="text-[10px] font-bold text-slate-500 font-khmer ml-1">លេខសម្ងាត់ (Password)</label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                          <input 
+                            type="password"
+                            required
+                            placeholder="លេខសម្ងាត់"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#094C72] transition-all font-sans"
+                          />
+                        </div>
+                      </div>
+
+                      {isRegistering && (
+                        <div className="space-y-1 text-left">
+                          <label className="text-[10px] font-bold text-slate-500 font-khmer ml-1">បញ្ជាក់លេខសម្ងាត់ (Confirm Password)</label>
+                          <div className="relative">
+                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                            <input 
+                              type="password"
+                              required
+                              placeholder="បញ្ជាក់លេខសម្ងាត់"
+                              value={conPassword}
+                              onChange={(e) => setConPassword(e.target.value)}
+                              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#094C72] transition-all font-sans"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="space-y-1 text-left">
+                      <label className="text-[10px] font-bold text-slate-500 font-khmer ml-1">លេខសម្ងាត់ (Password)</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                        <input 
+                          type="password"
+                          required
+                          placeholder="បញ្ចូលលេខសម្ងាត់អ្នកគ្រប់គ្រង"
+                          value={adminPass}
+                          onChange={(e) => setAdminPass(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#094C72] transition-all font-sans"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-[#094C72] text-white rounded-xl font-bold text-xs shadow-lg hover:bg-[#073652] transition-all cursor-pointer font-khmer"
+                  >
+                    {isSubmitting ? (
+                      <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <LogIn className="w-4 h-4" />
+                    )}
+                    <span>
+                      {isSubmitting
+                        ? 'កំពុងភ្ជាប់...'
+                        : (activeTab === 'MEMBER'
+                          ? (isRegistering ? 'ចុះឈ្មោះជាសមាជិក' : 'ចូលប្រើប្រាស់ជាសមាជិក')
+                          : 'ចូលប្រើប្រាស់ជាអ្នកគ្រប់គ្រង'
+                        )
+                      }
+                    </span>
+                  </button>
+                </form>
+
+
+              </motion.div>
             </div>
           )}
-        </div>
-      );
-    }
-
-    return (
-      <button
-        onClick={() => setShowLoginOptions(true)}
-        disabled={isLoggingIn}
-        className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm font-bold shadow-lg shadow-slate-900/20"
-      >
-        {isLoggingIn ? (
-          <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-        ) : (
-          <LogIn className="w-4 h-4" />
-        )}
-        {isLoggingIn ? 'កំពុងបញ្ចូល...' : 'ចូលគណនី (Sign In)'}
-      </button>
+        </AnimatePresence>
+      </>
     );
   }
 
@@ -106,33 +287,42 @@ export function UserNav() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 p-1.5 bg-white border border-slate-200 rounded-2xl hover:border-blue-300 transition-all shadow-sm"
+        className="flex items-center gap-3 p-1.5 pr-2 bg-white/90 backdrop-blur-md border border-slate-200 rounded-full hover:border-[#D4AF37] hover:bg-white transition-all duration-300 shadow-sm hover:shadow-md hover:shadow-[#D4AF37]/10 cursor-pointer group relative"
       >
-        {user.photoURL ? (
-          <div className="w-8 h-8 rounded-xl overflow-hidden relative">
-            <SafeImage src={user.photoURL} alt={user.displayName || ""} fill className="object-cover" />
-          </div>
-        ) : (
-          <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center">
-            <UserIcon className="w-4 h-4 text-blue-600" />
-          </div>
-        )}
-        <div className="hidden md:block text-left px-1">
-          <p className="text-xs font-bold text-slate-800 truncate max-w-[120px]">
-            {user.displayName || user.email}
-          </p>
-          {userRole === 'ADMIN' && (
-            <p className="text-[8px] font-black text-amber-600 uppercase tracking-widest leading-none mt-0.5">ADMIN</p>
+        <div className="relative">
+          {user.photoURL ? (
+            <div className="w-9 h-9 rounded-full overflow-hidden relative ring-2 ring-white shadow-sm border border-slate-100 group-hover:ring-[#D4AF37]/20 transition-all">
+              <SafeImage src={user.photoURL} alt={user.displayName || ""} fill className="object-cover" />
+            </div>
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 border border-slate-200/50 flex items-center justify-center ring-2 ring-white shadow-sm group-hover:ring-[#D4AF37]/20 transition-all text-[#094C72]">
+              <UserIcon className="w-4 h-4" />
+            </div>
+          )}
+          {isPremium && (
+            <div className="absolute -bottom-1 -right-1 bg-gradient-to-br from-[#FCECB8] to-[#D4AF37] text-white p-[3px] rounded-full shadow border border-white">
+              <Crown className="w-[10px] h-[10px] text-yellow-900" />
+            </div>
           )}
         </div>
-        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <div className="hidden md:flex flex-col items-start px-1">
+          <p className="text-xs font-bold text-slate-800 font-sans leading-tight group-hover:text-[#094C72] transition-colors truncate max-w-[120px]">
+             {user.displayName || user.email}
+          </p>
+          <p className="text-[10px] font-medium text-slate-400 leading-tight uppercase font-khmer mt-0.5">
+             {userRole === 'ADMIN' ? 'អ្នកគ្រប់គ្រង' : isPremium ? 'Premium' : 'សមាជិកធម្មតា'}
+          </p>
+        </div>
+        <div className={`ml-1 bg-slate-50 rounded-full p-1 group-hover:bg-blue-50 transition-colors ${isOpen ? 'rotate-180 bg-blue-50 text-[#094C72]' : ''}`}>
+           <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#094C72] transition-colors" />
+        </div>
       </button>
 
       <AnimatePresence>
         {isOpen && (
           <>
             <div 
-              className="fixed inset-0 z-30" 
+              className="fixed inset-0 z-35" 
               onClick={() => setIsOpen(false)} 
             />
             <motion.div
@@ -146,34 +336,21 @@ export function UserNav() {
                 <p className="text-xs text-slate-500 truncate">{user.email}</p>
                 {userRole === 'ADMIN' && (
                   <div className="mt-2 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full inline-block uppercase tracking-wider">
-                    អ្នកគ្រប់គ្រង (Admin)
+                    (Admin)
                   </div>
                 )}
               </div>
-              <div className="p-2 border-b border-slate-50">
-                {userRole === 'ADMIN' && (
-                  <Link
-                    href="/admin"
-                    onClick={() => setIsOpen(false)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 font-medium hover:bg-slate-50 rounded-xl transition-colors mb-1"
-                  >
-                    <LogIn className="w-4 h-4 text-blue-600" />
-                    គ្រប់គ្រង (Admin Panel)
-                  </Link>
-                )}
-                <Link
-                  href="/quiz"
-                  onClick={() => setIsOpen(false)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 font-medium hover:bg-slate-50 rounded-xl transition-colors"
-                >
-                  <Brain className="w-4 h-4 text-purple-600" />
-                  ប្រឡងសំណួរ (Quiz)
-                </Link>
-              </div>
               <div className="p-2">
+                <Link
+                  href="/subscription"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 font-medium hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+                >
+                  <Crown className="w-4 h-4 text-amber-500" />
+                  ប្ដូរទៅជា Premium
+                </Link>
                 <button
                   onClick={logout}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 font-medium hover:bg-red-50 rounded-xl transition-colors"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 font-medium hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                   ចាកចេញ (Sign Out)

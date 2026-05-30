@@ -34,7 +34,14 @@ export const VignasaSelector: React.FC<VignasaSelectorProps> = ({
   };
 
   const getCategoriesForType = (type: QuizType) => {
-    return Array.from(new Set((ministry.quizzes || []).filter(q => (q.type || 'MULTIPLE_CHOICE') === type).map(q => q.category)));
+    return Array.from(
+      new Set(
+        (ministry.quizzes || [])
+          .filter(q => (q.type || 'MULTIPLE_CHOICE') === type)
+          .map(q => q.category)
+          .filter((c): c is string => typeof c === 'string' && c.trim() !== '')
+      )
+    );
   };
 
   const getCategoryIcon = (category: string) => {

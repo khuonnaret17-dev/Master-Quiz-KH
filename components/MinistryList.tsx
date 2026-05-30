@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 
 interface MinistryListProps {
   ministries: Ministry[];
-  onSelect: (ministry: Ministry) => void;
+  onSelect: (ministry: Ministry, action?: string) => void;
   userProgress: UserProgress;
 }
 
@@ -50,6 +50,13 @@ export const MinistryList: React.FC<MinistryListProps> = ({ ministries, onSelect
                           alt={ministry.name} 
                           fill
                           className="object-contain p-2 sm:p-4 group-hover:scale-105 transition-transform duration-500"
+                          style={{
+                            backgroundColor: '#ffffff',
+                            borderStyle: 'double',
+                            borderWidth: '5px',
+                            borderColor: '#0f0fef',
+                            borderRadius: '21px'
+                          }}
                         />
                       ) : (
                         <GraduationCap className="w-8 h-8 sm:w-12 sm:h-12 text-slate-200" />
@@ -114,12 +121,21 @@ export const MinistryList: React.FC<MinistryListProps> = ({ ministries, onSelect
                           />
                         </div>
                       </div>
-                    </div>
-
-                    {/* Action Hint */}
-                    <div className="hidden lg:flex items-center justify-center p-4">
-                      <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center group-hover:bg-blue-600 group-hover:border-blue-600 transition-all duration-300">
-                        <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-white transition-colors" />
+                      
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 sm:gap-3 mt-4 sm:mt-6 pt-4 border-t border-slate-100">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onSelect(ministry, 'MCQ'); }}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 sm:py-3 rounded-xl transition-colors shadow-sm text-xs sm:text-sm font-khmer"
+                        >
+                          ចូលធ្វើតេស្ត
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); onSelect(ministry, 'DOCUMENTS'); }}
+                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 sm:py-3 rounded-xl transition-colors shadow-sm text-xs sm:text-sm font-khmer"
+                        >
+                          មើលឯកសារ
+                        </button>
                       </div>
                     </div>
                   </div>

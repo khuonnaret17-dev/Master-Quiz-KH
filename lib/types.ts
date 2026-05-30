@@ -1,11 +1,17 @@
 export type UserRole = 'ADMIN' | 'MEMBER';
 export type QuizType = 'MULTIPLE_CHOICE' | 'Q_AND_A' | 'VOCABULARY';
 
+export type MembershipPlan = 'FREE' | 'BASIC_1M' | 'BASIC_6M' | 'PREMIUM_1Y' | 'LIFETIME';
+
 export interface User {
   id: string;
   email: string;
   role: UserRole;
   name: string;
+  membership?: {
+    plan: MembershipPlan;
+    expiresAt?: string;
+  };
 }
 
 export interface Quiz {
@@ -61,6 +67,14 @@ export interface Ministry {
     term: string;
     definition: string;
   }[];
+}
+
+export interface PdfDocument {
+  id: string;
+  title: string;
+  url: string;
+  ministryId: string;
+  createdAt?: string;
 }
 
 export interface Progress {

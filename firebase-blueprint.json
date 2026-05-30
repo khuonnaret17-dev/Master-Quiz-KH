@@ -80,6 +80,18 @@
       },
       "required": ["question", "options", "correctIndex"]
     },
+    "Document": {
+      "title": "Document",
+      "description": "A PDF document for users to read",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "url"]
+    },
     "User": {
       "title": "User",
       "description": "User profile and progress",
@@ -89,6 +101,9 @@
         "email": { "type": "string", "format": "email" },
         "role": { "type": "string", "enum": ["ADMIN", "MEMBER"] },
         "progress": { "type": "object" },
+        "isPremium": { "type": "boolean" },
+        "premiumUntil": { "type": "string", "format": "date-time" },
+        "linkedBank": { "type": "object" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -103,6 +118,10 @@
     "quizzes/{quizId}": {
       "schema": "Quiz",
       "description": "Collection of quizzes about ministries"
+    },
+    "documents/{documentId}": {
+      "schema": "Document",
+      "description": "Collection of PDF documents"
     },
     "users/{userId}": {
       "schema": "User",

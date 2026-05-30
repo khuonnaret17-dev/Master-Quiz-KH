@@ -1,15 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Award, HelpCircle, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Award, HelpCircle, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import SafeImage from '@/components/SafeImage';
 import { Ministry, Quiz, QuizType } from '@/lib/types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { CategorySection } from '@/components/WebDocumentView';
 
 interface QuizViewProps {
   ministry: Ministry;
@@ -20,8 +19,8 @@ interface QuizViewProps {
 }
 
 export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType, onBack, onComplete }) => {
-  const quizzes = (ministry.quizzes || []).filter(q => q.category === category && (q.type || 'MULTIPLE_CHOICE') === quizType);
-  
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
@@ -30,39 +29,89 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
   const [isFinished, setIsFinished] = useState(false);
   const [showIntermediateResult, setShowIntermediateResult] = useState(false);
 
-  const downloadPDF = async () => {
-    const element = document.getElementById('quiz-container');
-    if (!element) return;
-    
-    const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
-    const imgData = canvas.toDataURL('image/png');
-    
-    const doc = new jsPDF('p', 'mm', 'a4');
-    const imgProps = doc.getImageProperties(imgData);
-    const pdfWidth = doc.internal.pageSize.getWidth();
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-    
-    doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    doc.save(`${ministry.name}_${category}.pdf`);
-  };
+  const [shuffledOptions, setShuffledOptions] = useState<{ originalKey: string; value: string }[]>([]);
 
-  const viewPDF = async () => {
-    const element = document.getElementById('quiz-container');
-    if (!element) return;
+  React.useEffect(() => {
+    const filtered = (ministry.quizzes || []).filter(q => q.category === category && (q.type || 'MULTIPLE_CHOICE') === quizType);
+    const shuffled = [...filtered].sort(() => Math.random() - 0.5);
     
-    const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
-    const imgData = canvas.toDataURL('image/png');
+    const timer = setTimeout(() => {
+      setQuizzes(shuffled);
+      setCurrentIdx(0);
+      setSelectedOption(null);
+      setShowExplanation(false);
+      setRevealed(false);
+      setAnswers({});
+      setIsFinished(false);
+      setShowIntermediateResult(false);
+      setIsLoading(false);
+    }, 0);
     
-    const doc = new jsPDF('p', 'mm', 'a4');
-    const imgProps = doc.getImageProperties(imgData);
-    const pdfWidth = doc.internal.pageSize.getWidth();
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-    
-    doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    doc.output('dataurlnewwindow');
-  };
+    return () => clearTimeout(timer);
+  }, [category, quizType, ministry]);
 
   const currentQuiz = quizzes[currentIdx];
+
+  React.useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (quizType === 'MULTIPLE_CHOICE' && currentQuiz && currentQuiz.options) {
+      const entries = Object.entries(currentQuiz.options);
+      const shuffled = [...entries].sort(() => Math.random() - 0.5);
+      const mapped = shuffled.map(([originalKey, value]) => ({ originalKey, value }));
+      timer = setTimeout(() => {
+        setShuffledOptions(mapped);
+      }, 0);
+    } else {
+      timer = setTimeout(() => {
+        setShuffledOptions([]);
+      }, 0);
+    }
+    return () => clearTimeout(timer);
+  }, [currentQuiz, quizType]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[450px] gap-4">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+          className="w-12 h-12 border-4 border-[#D4AF37] border-t-transparent rounded-full"
+        />
+        <p className="text-sm font-medium text-[#1B365D]/60 font-khmer">កំពុងរៀបចំសំណួរ...</p>
+      </div>
+    );
+  }
+
+  if (quizzes.length === 0) {
+    return (
+      <div className="text-center py-24 space-y-6 max-w-sm mx-auto">
+        <p className="text-lg text-[#1A1A1A]/70 font-khmer">មិនមានសំណួរសម្រាប់វិញ្ញាសានេះទេ។</p>
+        <Button onClick={onBack} className="font-khmer bg-[#1B365D] text-white hover:bg-[#1B365D]/90 h-12 px-6 rounded-xl">
+          ត្រឡប់ក្រោយ
+        </Button>
+      </div>
+    );
+  }
+
+  if (quizType === 'Q_AND_A' || quizType === 'VOCABULARY') {
+    return (
+      <div className="max-w-4xl mx-auto pb-24 space-y-6 animate-in fade-in slide-in-from-bottom-4">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-4">
+          <Button 
+            variant="ghost" 
+            onClick={onBack} 
+            className="group gap-2 md:gap-3 text-[10px] md:text-[10px] uppercase tracking-widest font-bold rounded-xl px-2 md:px-4"
+            style={{ color: 'rgba(27, 54, 93, 0.6)', backgroundColor: 'rgba(27, 54, 93, 0.05)' }}
+          >
+            <ChevronLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> ត្រឡប់
+          </Button>
+        </div>
+        <CategorySection category={category} items={quizzes} defaultExpanded={true} />
+      </div>
+    );
+  }
+
   const progressPercentage = ((currentIdx + 1) / quizzes.length) * 100;
 
   const optionLabels: { [key: string]: string } = {
@@ -204,32 +253,15 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
         <Button 
           variant="ghost" 
           onClick={onBack} 
-          className="group gap-2 md:gap-3 text-[10px] md:text-[10px] uppercase tracking-widest font-bold text-[#1B365D]/60 hover:text-[#1B365D] hover:bg-[#1B365D]/5 rounded-xl px-2 md:px-4"
+          className="group gap-2 md:gap-3 text-[10px] md:text-[10px] uppercase tracking-widest font-bold rounded-xl px-2 md:px-4"
+          style={{ color: 'rgba(27, 54, 93, 0.6)', backgroundColor: 'rgba(27, 54, 93, 0.05)' }}
         >
           <ChevronLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> ត្រឡប់
         </Button>
-        <div className="flex gap-2">
-          <div className="px-4 md:px-6 py-2 bg-white rounded-full border border-[#1B365D]/5 shadow-sm truncate max-w-[200px] md:max-w-none">
-            <span className="text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-[#D4AF37]">
-              {category}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <Button 
-                variant="outline"
-                onClick={viewPDF}
-                className="rounded-full px-4 md:px-6 py-2 border border-[#1B365D]/5 flex items-center gap-2 text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-[#1B365D]"
-            >
-                View PDF
-            </Button>
-            <Button 
-                variant="outline"
-                onClick={downloadPDF}
-                className="rounded-full px-4 md:px-6 py-2 border border-[#1B365D]/5 flex items-center gap-2 text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-[#1B365D]"
-            >
-                <Download className="w-3 h-3" /> PDF
-            </Button>
-          </div>
+        <div className="px-4 md:px-6 py-2 bg-white rounded-full border shadow-sm truncate max-w-[200px] md:max-w-none" style={{ borderColor: 'rgba(27, 54, 93, 0.05)', fontFamily: 'var(--font-khmer)' }}>
+          <span className="text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-[#D4AF37]">
+            {category}
+          </span>
         </div>
       </div>
 
@@ -239,7 +271,24 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
           <div className="space-y-4">
             <div className="inline-flex items-center gap-3">
               <span className="w-8 h-[2px] bg-[#D4AF37]" />
-              <span className="text-[#D4AF37] font-bold text-[10px] md:text-xs uppercase tracking-[0.4em]">សំណួរទី {currentIdx + 1} នៃ {quizzes.length}</span>
+              <span 
+                className="text-[#D4AF37] font-bold uppercase tracking-[0.4em]"
+                style={{
+                  fontFamily: 'Arial, sans-serif',
+                  width: '132.073px',
+                  height: '20.0026px',
+                  paddingTop: '2px',
+                  marginLeft: '-3px',
+                  marginTop: '0px',
+                  lineHeight: '16px',
+                  fontSize: '11px',
+                  borderStyle: 'solid',
+                  borderRadius: '1px',
+                  borderWidth: '0px'
+                }}
+              >
+                សំណួរទី {currentIdx + 1} នៃ {quizzes.length}
+              </span>
             </div>
             <h2 className="text-2xl md:text-4xl font-bold leading-[1.3] md:leading-[1.2] text-[#f8004c]">
               {currentQuiz.question}
@@ -255,41 +304,145 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
               className="space-y-6"
             >
               {quizType === 'MULTIPLE_CHOICE' ? (
-                <div className="grid grid-cols-1 gap-4 md:gap-6">
-                  {currentQuiz.options && Object.entries(currentQuiz.options).map(([key, value]) => {
+                <div className="grid grid-cols-1 gap-4 md:gap-5">
+                  {shuffledOptions.map((item, index) => {
+                    const key = item.originalKey;
+                    const value = item.value;
                     const isSelected = selectedOption === key;
                     const isCorrect = showExplanation && key === currentQuiz.correctAnswer;
                     const isWrong = showExplanation && isSelected && key !== currentQuiz.correctAnswer;
-                    const label = optionLabels[key] || key;
+                    
+                    const slotKey = ["A", "B", "C", "D"][index] || "A";
+                    const label = optionLabels[slotKey] || slotKey;
 
                     return (
-                      <button
+                      <motion.button
+                        whileHover={!showExplanation ? { scale: 1.015, y: -2 } : { scale: 1 }}
+                        whileTap={!showExplanation ? { scale: 0.98 } : { scale: 1 }}
+                        animate={
+                          isSelected && isCorrect
+                            ? { scale: [1, 1.04, 0.98, 1.01, 1], y: [0, -8, 2, -1, 0] }
+                            : isSelected && isWrong
+                            ? { x: [0, -12, 10, -8, 6, -4, 2, 0] }
+                            : {}
+                        }
+                        transition={{
+                          type: "spring",
+                          stiffness: 400,
+                          damping: 15,
+                          duration: 0.6
+                        }}
                         key={key}
                         disabled={showExplanation}
                         onClick={() => handleSelect(key)}
                         className={cn(
-                          "group relative flex items-center gap-4 md:gap-6 p-6 md:p-8 bg-white border-2 border-transparent rounded-2xl md:rounded-[2rem] transition-all duration-300 text-left hover:shadow-xl hover:shadow-black/5 h-full min-h-[5rem]",
-                          isSelected ? "border-[#1B365D] bg-[#1B365D]/[0.02]" : "border-white shadow-[0_10px_30px_rgba(0,0,0,0.03)]",
-                          isCorrect && "border-green-500/50 bg-green-50/50",
-                          isWrong && "border-red-500/50 bg-red-50/50",
-                          showExplanation && !isCorrect && !isWrong && "opacity-60 grayscale-[0.5]"
+                          "group relative flex items-center gap-4 md:gap-5 p-5 md:p-6 border-2 rounded-2xl md:rounded-[1.5rem] transition-all duration-500 text-left w-full overflow-hidden hover:z-10",
+                          !showExplanation && "bg-white border-slate-200 hover:border-[#D4AF37] hover:shadow-[0_8px_30px_rgb(212,175,55,0.15)] hover:bg-gradient-to-br hover:from-white hover:to-[#FCF9F2]",
+                          isSelected && !showExplanation && "border-[#D4AF37] bg-gradient-to-br from-white to-[#FCF9F2] ring-4 ring-[#D4AF37]/10 z-10",
+                          isCorrect && "border-emerald-500 bg-emerald-50 ring-4 ring-emerald-500/20 z-10",
+                          isWrong && "border-rose-500 bg-rose-50 ring-4 ring-rose-500/20 z-10",
+                          showExplanation && !isCorrect && !isWrong && "border-slate-100 opacity-60 bg-slate-50/50 grayscale-[0.5]"
                         )}
+                        style={{
+                          boxShadow: !showExplanation && isSelected ? '0 10px 40px -10px rgba(212,175,55,0.3)' : undefined,
+                        }}
                       >
                         <div className={cn(
-                          "flex-shrink-0 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl border-2 border-[#1B365D]/10 font-bold text-sm transition-all duration-300",
-                          isSelected ? "bg-[#1B365D] text-white border-[#1B365D] scale-110" : "bg-[#FAF9F6] text-[#1B365D] group-hover:border-[#1B365D]",
-                          isCorrect && "bg-green-500 text-white border-green-500",
-                          isWrong && "bg-red-500 text-white border-red-500"
+                          "flex-shrink-0 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-full border-2 font-bold text-sm md:text-base transition-all duration-500 shadow-sm z-10",
+                          !showExplanation && isSelected ? "bg-[#D4AF37] text-white border-[#D4AF37] shadow-[0_0_15px_rgba(212,175,55,0.4)] scale-110" : "bg-white text-slate-400 border-slate-200 group-hover:border-[#D4AF37] group-hover:text-[#D4AF37] group-hover:bg-[#FCF9F2]",
+                          isCorrect && "bg-emerald-500 text-white border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)] scale-110",
+                          isWrong && "bg-rose-500 text-white border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)] scale-110",
+                          showExplanation && !isCorrect && !isWrong && "bg-slate-100 text-slate-300 border-slate-200"
                         )}>
-                          {label}
+                          {isCorrect ? <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6" /> : isWrong ? <XCircle className="w-5 h-5 md:w-6 md:h-6" /> : label}
                         </div>
                         <span className={cn(
-                          "flex-grow text-base md:text-lg font-medium transition-colors",
-                          isSelected ? "text-[#1B365D]" : "text-[#1A1A1A]/70"
-                        )}>
+                          "flex-grow text-base md:text-lg font-medium transition-colors relative z-10",
+                          isSelected || isCorrect || isWrong ? "text-slate-900 font-bold" : "text-slate-600 group-hover:text-slate-900"
+                        )}
+                        style={{ fontFamily: 'var(--font-khmer)' }}
+                        >
                           {value}
                         </span>
-                      </button>
+                        
+                        {/* Right side animated status badges */}
+                        {showExplanation && (
+                          <div className="relative z-15 shrink-0 ml-2">
+                            {isSelected && isCorrect && (
+                              <motion.div
+                                initial={{ scale: 0, opacity: 0, rotate: -15 }}
+                                animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                                transition={{ type: "spring", stiffness: 350, damping: 12, delay: 0.15 }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 text-white text-xs font-bold font-khmer shadow-md shadow-emerald-500/20 border border-emerald-400"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 animate-bounce" />
+                                <span>ត្រឹមត្រូវ! 🎉</span>
+                              </motion.div>
+                            )}
+                            {isSelected && isWrong && (
+                              <motion.div
+                                initial={{ scale: 0, opacity: 0, rotate: 15 }}
+                                animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                                transition={{ type: "spring", stiffness: 350, damping: 12, delay: 0.15 }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500 text-white text-xs font-bold font-khmer shadow-md shadow-rose-500/20 border border-rose-400"
+                              >
+                                <XCircle className="w-3.5 h-3.5 animate-pulse" />
+                                <span>ខុសហើយ! ❌</span>
+                              </motion.div>
+                            )}
+                            {isCorrect && !isSelected && (
+                              <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 0.95 }}
+                                transition={{ duration: 0.3, delay: 0.2 }}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-850 text-xs font-medium font-khmer border border-emerald-200"
+                              >
+                                <span>ចម្លើយត្រឹមត្រូវ</span>
+                              </motion.div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Sparkle burst decoration for correct chosen option */}
+                        {isSelected && isCorrect && (
+                          <>
+                            <motion.div
+                              initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
+                              animate={{ scale: [0, 1.25, 0], opacity: [0, 1, 0], x: [-35, -75], y: [-15, -45] }}
+                              transition={{ duration: 1.2, ease: "easeOut" }}
+                              className="absolute right-12 top-2 text-yellow-500 pointer-events-none z-20"
+                            >
+                              <Sparkles className="w-5 h-5 fill-yellow-400" />
+                            </motion.div>
+                            <motion.div
+                              initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
+                              animate={{ scale: [0, 1.25, 0], opacity: [0, 1, 0], x: [15, 60], y: [15, 45] }}
+                              transition={{ duration: 1.3, ease: "easeOut", delay: 0.05 }}
+                              className="absolute right-24 bottom-2 text-emerald-400 pointer-events-none z-20"
+                            >
+                              <Sparkles className="w-4 h-4 fill-emerald-300" />
+                            </motion.div>
+                            <motion.div
+                              initial={{ scale: 0, opacity: 0, x: 0, y: 0 }}
+                              animate={{ scale: [0, 1, 0], opacity: [0, 0.85, 0], x: [-25, -50], y: [15, 30] }}
+                              transition={{ duration: 1.0, ease: "easeOut", delay: 0.1 }}
+                              className="absolute left-1/3 top-1 text-sky-400 pointer-events-none z-20"
+                            >
+                              <Sparkles className="w-4 h-4 fill-sky-300" />
+                            </motion.div>
+                          </>
+                        )}
+                        
+                        {isCorrect && (
+                          <div className="absolute inset-0 bg-gradient-to-r from-transparent to-green-500/5 rounded-2xl md:rounded-[1.5rem]" />
+                        )}
+                        {isWrong && (
+                          <div 
+                            className="absolute inset-0 bg-gradient-to-r from-transparent to-red-500/5 rounded-2xl md:rounded-[1.5rem]" 
+                            style={{ backgroundColor: '#ecdada' }}
+                          />
+                        )}
+                      </motion.button>
                     );
                   })}
                 </div>
@@ -317,7 +470,7 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
                         </div>
                         <h3 className="font-bold text-green-600 uppercase tracking-widest text-[10px] md:text-xs">ចម្លើយត្រឹមត្រូវ</h3>
                       </div>
-                      <p className="text-xl md:text-2xl font-bold text-[#1B365D] leading-relaxed whitespace-pre-wrap">
+                      <p className="text-xl md:text-2xl font-bold text-[#1B365D] leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'var(--font-khmer)' }}>
                         {currentQuiz.answer || currentQuiz.correctAnswer}
                       </p>
                     </motion.div>

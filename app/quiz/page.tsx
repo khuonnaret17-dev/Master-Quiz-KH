@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from 'react';
 import { useFirebase } from '@/lib/FirebaseProvider';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,7 +9,7 @@ import { CheckCircle2, XCircle, ArrowLeft, RotateCcw, Trophy, Brain } from 'luci
 import Link from 'next/link';
 
 export default function QuizPage() {
-  const { ministries, loading } = useFirebase();
+  const { ministries, loading, authLoading, user, userRole, isPremium } = useFirebase();
   const [currentStep, setCurrentStep] = useState(0);
   const [score, setScore] = useState(0);
   const [showResult, setShowResult] = useState(false);
@@ -45,6 +47,8 @@ export default function QuizPage() {
     }
   };
 
+  console.log('DEBUG: Quiz Page', { user, isPremium, userRole });
+
   const nextQuestion = () => {
     if (currentStep < quizzes.length - 1) {
       setCurrentStep(currentStep + 1);
@@ -63,11 +67,98 @@ export default function QuizPage() {
     setIsAnswered(false);
   };
 
-  if (loading) return null;
+  const isBlocked = !user || (!isPremium && userRole !== 'ADMIN');
+
+  if (loading || authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-transparent text-slate-700 font-bold">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+          <p className="text-sm">កំពុងផ្ទៀងផ្ទាត់សមាជិកភាព...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isBlocked) {
+    const isLoggedIn = !!user;
+    return (
+      <div className="min-h-screen bg-transparent flex items-center justify-center p-6 md:p-12">
+        <div className="max-w-md w-full">
+          <header className="mb-8">
+            <Link href="/" className="inline-flex items-center text-slate-500 hover:text-slate-800 transition-colors">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              ត្រឡប់ទៅដើមវិញ (Home)
+            </Link>
+          </header>
+
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-8 text-center rounded-[2rem] bg-white border-2 border-amber-500/30 shadow-2xl relative overflow-hidden"
+            style={{
+              backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M0 0h20v20H0V0zm10 17L3 10l7-7 7 7-7 7z\' fill=\'%23D4AF37\' fill-opacity=\'0.02\' fill-rule=\'evenodd\'/%3E%3C/svg%3E")'
+            }}
+          >
+            {/* Background Effects */}
+            <div className="absolute top-0 right-0 -mr-12 -mt-12 w-48 h-48 bg-amber-500/5 rounded-full blur-3xl opacity-60" />
+            <div className="absolute bottom-0 left-0 -ml-12 -mb-12 w-48 h-48 bg-blue-500/5 rounded-full blur-3xl opacity-60" />
+
+            <div className="w-24 h-24 mx-auto rounded-3xl bg-amber-100 flex items-center justify-center text-amber-500 border border-amber-200 mb-6 shadow-inner">
+              <Trophy className="w-12 h-12 fill-amber-500/20 animate-pulse" />
+            </div>
+
+            <div className="space-y-4">
+              <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold uppercase tracking-wider">
+                👑 {isLoggedIn ? 'PREMIUM REQUIRED' : 'LOGIN REQUIRED'}
+              </div>
+
+              <h2 className="text-xl md:text-2xl font-black text-slate-900 leading-tight">
+                {isLoggedIn 
+                  ? 'អ្នកត្រូវការគម្រោង Premium ដើម្បីលេង!'
+                  : 'សូមចូលគណនីដើម្បីចាប់ផ្ដើម!'}
+              </h2>
+
+              <p className="text-sm text-slate-500 leading-relaxed max-w-sm mx-auto">
+                {isLoggedIn 
+                  ? 'សាកល្បងសមត្ថភាពស្វែងយល់ពីក្រសួងនិងស្ថាប័នរដ្ឋផ្សេងៗ ជាមួយមុខងារតេស្តពិសេសរបស់សមាជិកវីរជន Premium។'
+                  : 'សូមចូលគណនីរបស់អ្នកដើម្បីទទួលបានសិទ្ធិចូលប្រើមុខងារតេស្តចំណេះដឹងពិសេស។'}
+              </p>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col gap-4">
+              {isLoggedIn ? (
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center gap-3">
+                  <p className="text-xs text-slate-500 font-bold">ទៅកាន់ទំព័រជាវគម្រោង Premium</p>
+                  <Link
+                    href="/subscription"
+                    className="px-6 py-2.5 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 transition-colors"
+                  >
+                    ប្ដូរទៅជា Premium
+                  </Link>
+                </div>
+              ) : (
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center gap-3">
+                  <p className="text-xs text-slate-500 font-bold">សូមសាកល្បងចូលគណនីរបស់អ្នកជាមុនសិន</p>
+                  <Link
+                    href="/"
+                    className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors"
+                  >
+                    ចូលទៅកាន់ការចូលគណនី
+                  </Link>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
+
   if (quizzes.length === 0) return <div>Not enough data for quiz.</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-12">
+    <div className="min-h-screen bg-transparent p-6 md:p-12">
       <div className="max-w-2xl mx-auto">
         <header className="mb-12 flex items-center justify-between">
           <Link href="/" className="inline-flex items-center text-slate-500 hover:text-slate-800 transition-colors">

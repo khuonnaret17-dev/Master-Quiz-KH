@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useFirebase } from '@/lib/FirebaseProvider';
 import { db } from '@/lib/firebase';
@@ -7,7 +9,7 @@ import { setDoc, doc, deleteDoc } from 'firebase/firestore';
 import { ministries as initialMinistries } from '@/lib/data';
 import { Ministry } from '@/lib/types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Save, X, Pencil, ArrowLeft, Globe, AlertCircle, CheckCircle2, Plus, Trash2, ChevronDown, ChevronUp, GripVertical, ExternalLink } from 'lucide-react';
+import { Save, X, Pencil, ArrowLeft, Globe, AlertCircle, CheckCircle2, Plus, Trash2, ChevronDown, ChevronUp, GripVertical, ExternalLink, Send, Users, Shield, Crown, Key, BookOpen } from 'lucide-react';
 import Link from 'next/link';
 import SafeImage from '@/components/SafeImage';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -17,13 +19,21 @@ function CategoryEditor({
   categories,
   updateParent,
   type,
-  depth = 0
+  depth = 0,
+  onSendTelegram
 }: {
   categories: any[];
   updateParent: (newCategories: any[]) => void;
   type: 'mcq' | 'qa';
   depth?: number;
+  onSendTelegram?: (item: any, type: 'mcq' | 'qa', elementId: string) => void;
 }) {
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+
+  const toggleExpand = (cIdx: number) => {
+    setExpanded(prev => ({ ...prev, [cIdx]: prev[cIdx] === undefined ? false : !prev[cIdx] }));
+  };
+
   const handleUpdateCategory = (cIdx: number, updatedCat: any) => {
     const newCats = [...categories];
     newCats[cIdx] = updatedCat;
@@ -37,41 +47,79 @@ function CategoryEditor({
       const items: any[] = [];
       const lines = text.split('\n');
       let currentItem: any = null;
+      let inAnswer = false;
+      let lastLineBlank = true;
       
       lines.forEach(line => {
           const trimmedLine = line.trim();
-          if (!trimmedLine) return;
+          if (!trimmedLine) {
+              lastLineBlank = true;
+              return;
+          }
 
-          // Question: Find "1. ..."
-          const qMatch = trimmedLine.match(/^([០-៩១-៩]+)\.\s*(.*)/);
-          if (qMatch) {
+          // Question: Find "1. ..." or "១. ..." with optional spaces and delimiters
+          const qMatch = trimmedLine.match(/^([០-៩a-zA-Z0-9]+)\s*[.\-)]\s*(.*)/);
+          const isProbablyQuestion = qMatch && (lastLineBlank || !inAnswer || trimmedLine.includes('តើ') || trimmedLine.includes('?'));
+
+          if (isProbablyQuestion) {
               if (currentItem) items.push(currentItem);
               currentItem = type === 'mcq' 
                 ? { question: qMatch[2], options: [], correctIndex: 0, explanation: '' }
                 : { question: qMatch[2], answer: '' };
+              inAnswer = false;
+              lastLineBlank = false;
               return;
           }
 
           // Option/Answer
-          // Options look like "ក. ..." "ខ. ..."
           if (type === 'mcq' && currentItem) {
-            const oMatch = trimmedLine.match(/^(ក|ខ|គ|ឃ)\.\s*(.*)/);
+            const oMatch = trimmedLine.match(/^(ក|ខ|គ|ឃ|ង|ច|ឆ|ជ|ឈ|ញ|[a-dA-D])\s*[.\-)]\s*(.*)/i);
             if (oMatch) {
               const optText = oMatch[2];
-              const isCorrect = optText.includes('(ចម្លើយត្រឹមត្រូវ)');
-              const cleanOptText = optText.replace('(ចម្លើយត្រឹមត្រូវ)', '').replace(/\s*\(\s*ចម្លើយត្រឹមត្រូវ\s*\)/, '').trim();
+              let isCorrect = false;
+              let cleanOptText = optText;
+
+              if (/ចម្លើយត្រឹមត្រូវ|ត្រឹមត្រូវ/.test(optText)) {
+                isCorrect = true;
+                cleanOptText = optText
+                  .replace(/\s*\(\s*ចម្លើយត្រឹមត្រូវ\s*\)/g, '')
+                  .replace(/\s*\[\s*ចម្លើយត្រឹមត្រូវ\s*\]/g, '')
+                  .replace(/\s*ចម្លើយត្រឹមត្រូវ/g, '')
+                  .replace(/\s*\(\s*ត្រឹមត្រូវ\s*\)/g, '')
+                  .replace(/\s*ត្រឹមត្រូវ/g, '')
+                  .trim();
+              }
               
               currentItem.options.push(cleanOptText);
               if (isCorrect) currentItem.correctIndex = currentItem.options.length - 1;
+            } else {
+               // If there is an explanation indicator (like 'យោង' or 'ពន្យល់'), or if options are already populated
+               const isExplanationLine = trimmedLine.startsWith('យោង') || 
+                                         trimmedLine.startsWith('ពន្យល់') || 
+                                         trimmedLine.toLowerCase().startsWith('ref') || 
+                                         trimmedLine.toLowerCase().startsWith('source') ||
+                                         currentItem.options.length > 0;
+               if (isExplanationLine) {
+                 currentItem.explanation = currentItem.explanation 
+                   ? currentItem.explanation + '\n' + trimmedLine 
+                   : trimmedLine;
+               } else {
+                 currentItem.question = currentItem.question + '\n' + trimmedLine;
+               }
             }
           } else if (type === 'qa' && currentItem) {
             // Answer looks like "ចម្លើយ: ..." or just text
             if (trimmedLine.startsWith('ចម្លើយ')) {
-                currentItem.answer = trimmedLine.replace(/^ចម្លើយ\s*[:៖]?\s*/, '').trim();
-            } else if (!currentItem.answer) {
-                currentItem.answer = trimmedLine;
+                inAnswer = true;
+                const ansText = trimmedLine.replace(/^ចម្លើយ\s*[:៖]?\s*/, '').trim();
+                currentItem.answer = currentItem.answer ? currentItem.answer + '\n' + ansText : ansText;
+            } else if (inAnswer) {
+                currentItem.answer = currentItem.answer ? currentItem.answer + '\n' + trimmedLine : trimmedLine;
+            } else {
+                currentItem.question = currentItem.question + '\n' + trimmedLine;
             }
           }
+          lastLineBlank = false;
       });
       if (currentItem) items.push(currentItem);
       return items;
@@ -89,13 +137,22 @@ function CategoryEditor({
     if (!newCats[cIdx].subCategories) newCats[cIdx].subCategories = [];
     newCats[cIdx].subCategories.push({ category: "New SubCategory", items: [] });
     updateParent(newCats);
+    setExpanded(prev => ({ ...prev, [cIdx]: true })); // Expand when adding sub
   };
 
   return (
     <div className={`space-y-4 ${depth > 0 ? 'ml-6 mt-2 border-l border-slate-200 pl-4' : ''}`}>
-      {categories.map((cat, cIdx) => (
+      {categories.map((cat, cIdx) => {
+        const isExpanded = expanded[cIdx] !== false; // Default to true
+        return (
         <div key={cIdx} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => toggleExpand(cIdx)}
+              className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+            </button>
             <input 
               type="text" 
               value={cat.category}
@@ -117,119 +174,157 @@ function CategoryEditor({
             >
               <Trash2 className="w-4 h-4" />
             </button>
-            {/* Render Items */}
-            <div className="space-y-2">
-              {cat.items && cat.items.map((item: any, iIdx: number) => (
-                  <div key={iIdx} className="p-3 border border-slate-100 rounded text-xs bg-slate-50 space-y-2">
-                    <input
-                      type="text"
-                      className="w-full font-bold bg-transparent outline-none border-b border-slate-200"
-                      value={item.question}
-                      onChange={(e) => {
-                        const newItems = [...cat.items];
-                        newItems[iIdx].question = e.target.value;
-                        handleUpdateCategory(cIdx, { ...cat, items: newItems });
-                      }}
-                      placeholder="Question"
-                    />
-                    
-                    {type === 'mcq' ? (
-                      <div className="grid grid-cols-2 gap-2 mt-2">
-                        {item.options.map((opt: string, oIdx: number) => (
-                          <div key={oIdx} className="flex items-center gap-1">
-                            <input 
-                              type="radio"
-                              checked={item.correctIndex === oIdx}
-                              onChange={() => {
-                                const newItems = [...cat.items];
-                                newItems[iIdx].correctIndex = oIdx;
-                                handleUpdateCategory(cIdx, { ...cat, items: newItems });
-                              }}
-                            />
-                            <input 
-                              value={opt}
-                              placeholder={`Option ${oIdx + 1}`}
-                              onChange={(e) => {
-                                const newItems = [...cat.items];
-                                newItems[iIdx].options[oIdx] = e.target.value;
-                                handleUpdateCategory(cIdx, { ...cat, items: newItems });
-                              }}
-                              className="text-xs w-full bg-white rounded px-1 py-0.5 outline-none border focus:border-blue-200"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <input
-                        value={item.answer}
-                        placeholder="Answer"
+          </div>
+          
+          {isExpanded && (
+            <div className="space-y-4 ml-8">
+              {/* Render Items */}
+              <div className="space-y-4">
+                {cat.items && cat.items.map((item: any, iIdx: number) => {
+                  const uniqueId = `admin-item-${type}-${depth}-${cIdx}-${iIdx}`;
+                  return (
+                    <div key={iIdx} id={uniqueId} className="p-4 border border-slate-200 rounded-2xl text-xs bg-white shadow-sm space-y-2.5 relative overflow-hidden">
+                      <textarea
+                        className="w-full font-bold bg-transparent outline-none border-b border-slate-100 pb-1.5 resize-none overflow-hidden"
+                        value={item.question}
+                        rows={item.question ? item.question.split('\n').length : 1}
                         onChange={(e) => {
                           const newItems = [...cat.items];
-                          newItems[iIdx].answer = e.target.value;
+                          newItems[iIdx].question = e.target.value;
                           handleUpdateCategory(cIdx, { ...cat, items: newItems });
                         }}
-                        className="text-xs w-full bg-white rounded px-1 py-0.5 outline-none border focus:border-blue-200 mt-1"
+                        placeholder="Question"
                       />
-                    )}
-                    
-                    <button 
-                      onClick={() => {
-                        const newItems = cat.items.filter((_: any, i: number) => i !== iIdx);
-                        handleUpdateCategory(cIdx, { ...cat, items: newItems });
-                      }}
-                      className="text-slate-400 hover:text-red-500 mt-2 block ml-auto"
+                      
+                      {type === 'mcq' ? (
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          {item.options.map((opt: string, oIdx: number) => (
+                            <div key={oIdx} className="flex items-center gap-1.5 p-1 bg-slate-50/50 rounded-lg">
+                              <input 
+                                type="radio"
+                                checked={item.correctIndex === oIdx}
+                                onChange={() => {
+                                  const newItems = [...cat.items];
+                                  newItems[iIdx].correctIndex = oIdx;
+                                  handleUpdateCategory(cIdx, { ...cat, items: newItems });
+                                }}
+                                className="cursor-pointer"
+                              />
+                              <input 
+                                value={opt}
+                                placeholder={`Option ${oIdx + 1}`}
+                                onChange={(e) => {
+                                  const newItems = [...cat.items];
+                                  newItems[iIdx].options[oIdx] = e.target.value;
+                                  handleUpdateCategory(cIdx, { ...cat, items: newItems });
+                                }}
+                                className="text-xs w-full bg-white rounded px-1.5 py-1 outline-none border border-slate-100 focus:border-blue-200"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <textarea
+                          value={item.answer}
+                          placeholder="Answer"
+                          rows={item.answer ? item.answer.split('\n').length : 1}
+                          onChange={(e) => {
+                            const newItems = [...cat.items];
+                            newItems[iIdx].answer = e.target.value;
+                            handleUpdateCategory(cIdx, { ...cat, items: newItems });
+                          }}
+                          className="text-xs w-full bg-slate-50 border border-slate-100 rounded px-2 py-1.5 outline-none focus:border-blue-200 mt-1 resize-none overflow-hidden"
+                        />
+                      )}
+
+                      {/* Explanation Field */}
+                      <textarea
+                        value={item.explanation || ''}
+                        placeholder="Explanation (ការពន្យល់ - ស្រេចចិត្ត)"
+                        rows={item.explanation ? item.explanation.split('\n').length : 1}
+                        onChange={(e) => {
+                          const newItems = [...cat.items];
+                          newItems[iIdx].explanation = e.target.value;
+                          handleUpdateCategory(cIdx, { ...cat, items: newItems });
+                        }}
+                        className="text-[10px] w-full bg-slate-50/40 text-slate-500 border border-slate-100/60 rounded px-2 py-1 outline-none focus:border-purple-200 mt-1 resize-none overflow-hidden"
+                      />
+                      
+                      <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100" data-html2canvas-ignore="true">
+                        {onSendTelegram ? (
+                          <button
+                            type="button"
+                            onClick={() => onSendTelegram(item, type, uniqueId)}
+                            className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-extrabold text-blue-600 bg-blue-50/50 hover:bg-blue-100 hover:text-blue-700 px-3 py-1.5 rounded-lg transition-all border border-blue-100/50"
+                          >
+                            <Send className="w-3 h-3" />
+                            <span>ផ្ញើទៅ Telegram</span>
+                          </button>
+                        ) : <div />}
+                        
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            const newItems = cat.items.filter((_: any, i: number) => i !== iIdx);
+                            handleUpdateCategory(cIdx, { ...cat, items: newItems });
+                          }}
+                          className="text-slate-400 hover:text-red-550 hover:bg-red-50 p-1.5 rounded-lg transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                <button 
+                  onClick={() => {
+                    const newItem = type === 'mcq' 
+                      ? { question: "New Question", options: ["", "", "", ""], correctIndex: 0 } 
+                      : { question: "New Question", answer: "New Answer" };
+                    handleUpdateCategory(cIdx, { ...cat, items: [ ...(cat.items || []), newItem] });
+                  }}
+                  className="text-[10px] font-bold text-slate-500 w-full py-1 border border-dashed border-slate-200 rounded hover:border-slate-400"
+                >
+                  + Add Item
+                </button>
+                <button
+                  onClick={() => setIsBulkImporting(!isBulkImporting)}
+                  className="text-[10px] font-bold text-blue-500 w-full py-1 mt-1 border border-dashed border-blue-200 rounded hover:border-blue-400"
+                >
+                  {isBulkImporting ? 'Cancel Bulk' : '+ Bulk Import'}
+                </button>
+                {isBulkImporting && (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      value={bulkText}
+                      onChange={(e) => setBulkText(e.target.value)}
+                      className="w-full p-2 text-xs border rounded h-32"
+                      placeholder="១. សំណួរ?&#10;ក. ចម្លើយ១&#10;ខ. ចម្លើយ២ (ចម្លើយត្រឹមត្រូវ)"
+                    />
+                    <button
+                      onClick={() => handleBulkAdd(cIdx)}
+                      className="text-xs font-bold text-white bg-blue-600 w-full py-1.5 rounded hover:bg-blue-700"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      Import Questions
                     </button>
                   </div>
-              ))}
-              <button 
-                onClick={() => {
-                  const newItem = type === 'mcq' 
-                    ? { question: "New Question", options: ["", "", "", ""], correctIndex: 0 } 
-                    : { question: "New Question", answer: "New Answer" };
-                  handleUpdateCategory(cIdx, { ...cat, items: [ ...(cat.items || []), newItem] });
-                }}
-                className="text-[10px] font-bold text-slate-500 w-full py-1 border border-dashed border-slate-200 rounded hover:border-slate-400"
-              >
-                + Add Item
-              </button>
-              <button
-                onClick={() => setIsBulkImporting(!isBulkImporting)}
-                className="text-[10px] font-bold text-blue-500 w-full py-1 mt-1 border border-dashed border-blue-200 rounded hover:border-blue-400"
-              >
-                {isBulkImporting ? 'Cancel Bulk' : '+ Bulk Import'}
-              </button>
-              {isBulkImporting && (
-                <div className="mt-2 space-y-2">
-                  <textarea
-                    value={bulkText}
-                    onChange={(e) => setBulkText(e.target.value)}
-                    className="w-full p-2 text-xs border rounded h-32"
-                    placeholder="១. សំណួរ?&#10;ក. ចម្លើយ១&#10;ខ. ចម្លើយ២ (ចម្លើយត្រឹមត្រូវ)"
-                  />
-                  <button
-                    onClick={() => handleBulkAdd(cIdx)}
-                    className="text-xs font-bold text-white bg-blue-600 w-full py-1.5 rounded hover:bg-blue-700"
-                  >
-                    Import Questions
-                  </button>
-                </div>
+                )}
+              </div>
+
+              {/* Recursive Sub-categories */}
+              {cat.subCategories && cat.subCategories.length > 0 && (
+                <CategoryEditor 
+                  categories={cat.subCategories}
+                  updateParent={(newSubs) => handleUpdateCategory(cIdx, { ...cat, subCategories: newSubs })}
+                  type={type}
+                  depth={depth + 1}
+                  onSendTelegram={onSendTelegram}
+                />
               )}
             </div>
-
-            {/* Recursive Sub-categories */}
-            {cat.subCategories && cat.subCategories.length > 0 && (
-              <CategoryEditor 
-                categories={cat.subCategories}
-                updateParent={(newSubs) => handleUpdateCategory(cIdx, { ...cat, subCategories: newSubs })}
-                type={type}
-                depth={depth + 1}
-              />
-            )}
-          </div>
+          )}
         </div>
-        ))}
+        )})}
         {/* Add Main Category at this depth if needed */}
          <button 
             onClick={() => updateParent([...categories, { category: "New Category", items: [] }])}
@@ -249,7 +344,67 @@ export default function AdminPage() {
   const [urlError, setUrlError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'MINISTRIES' | 'USERS'>('MINISTRIES');
+  const [usersInfo, setUsersInfo] = useState<any[]>([]);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+
+  useEffect(() => {
+    if (activeTab === 'USERS') {
+      const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUsersInfo(JSON.parse(usersStr));
+    }
+  }, [activeTab]);
+
+  const handleGrantPremium = (username: string) => {
+    setUserActionDialog({ type: 'GRANT_PREMIUM', username });
+  };
+
+  const handleRevokePremium = (username: string) => {
+    setUserActionDialog({ type: 'REVOKE_PREMIUM', username });
+  };
+
+  const handleDeleteUser = (username: string) => {
+    setUserActionDialog({ type: 'DELETE_USER', username });
+  };
+
+  const handleResetPassword = (username: string) => {
+    setNewPasswordValue("");
+    setUserActionDialog({ type: 'RESET_PASSWORD', username });
+  };
+
+  const confirmUserAction = () => {
+    if (!userActionDialog) return;
+    const { type, username } = userActionDialog;
+    const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
+    let users = JSON.parse(usersStr);
+    const idx = users.findIndex((u: any) => u.username === username);
+
+    if (type === 'DELETE_USER') {
+      users = users.filter((u: any) => u.username !== username);
+      localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
+      setUsersInfo(users);
+      setUserActionDialog(null);
+    } else if (idx !== -1) {
+      if (type === 'GRANT_PREMIUM') {
+        users[idx].isPremium = true;
+        users[idx].premiumUntil = "2099-12-31T23:59:59.000Z"; 
+      } else if (type === 'REVOKE_PREMIUM') {
+        users[idx].isPremium = false;
+        users[idx].premiumUntil = null;
+      } else if (type === 'RESET_PASSWORD') {
+        if (!newPasswordValue || newPasswordValue.trim().length === 0) return;
+        users[idx].password = newPasswordValue.trim();
+      }
+      localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
+      setUsersInfo(users);
+      setUserActionDialog(null);
+    }
+  };
+
   const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
+  const [userActionDialog, setUserActionDialog] = useState<{type: 'GRANT_PREMIUM' | 'REVOKE_PREMIUM' | 'DELETE_USER' | 'RESET_PASSWORD', username: string} | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState("");
   const [resetConfirm, setResetConfirm] = useState(false);
   const [collapsedMcqs, setCollapsedMcqs] = useState<Record<number, boolean>>({});
   const [collapsedQas, setCollapsedQas] = useState<Record<number, boolean>>({});
@@ -260,6 +415,172 @@ export default function AdminPage() {
   const [autoSaving, setAutoSaving] = useState(false);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const initialLoadRef = useRef(true);
+
+  // Telegram Sending State
+  const [sendingQuiz, setSendingQuiz] = useState<any | null>(null);
+  const [sendingQuizType, setSendingQuizType] = useState<'mcq' | 'qa' | null>(null);
+  const [sendingElementId, setSendingElementId] = useState<string | null>(null);
+  const [telegramChatId, setTelegramChatId] = useState("");
+  const [telegramFormat, setTelegramFormat] = useState<'POLL' | 'TEXT' | 'IMAGE'>('TEXT');
+  const [isSendingTelegram, setIsSendingTelegram] = useState(false);
+  const [telegramProgress, setTelegramProgress] = useState("");
+  const [telegramError, setTelegramError] = useState("");
+
+  // Load chat ID on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('vignasa_telegram_chat_id') || localStorage.getItem('telegramChatId') || "";
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTelegramChatId(saved);
+    }
+  }, []);
+
+  const handleSendTelegramQuiz = async () => {
+    if (!sendingQuiz || !telegramChatId) {
+      setTelegramError("សូមបញ្ចូល Chat ID!");
+      return;
+    }
+    setTelegramError("");
+    setIsSendingTelegram(true);
+    setTelegramProgress("កំពុងដំណើរការ...");
+
+    try {
+      localStorage.setItem('vignasa_telegram_chat_id', telegramChatId);
+      localStorage.setItem('telegramChatId', telegramChatId);
+
+      const botToken = "8301052612:AAE4QDXA2GMi2nMBxfLe2_v-wQSpd-JrML0";
+
+      const escapeHTML = (str: string) => {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      };
+
+      if (telegramFormat === 'TEXT') {
+        let text = `<b>សំណួរ៖</b> ${escapeHTML(sendingQuiz.question || '')}\n\n`;
+        if (sendingQuizType === 'mcq' && sendingQuiz.options && Array.isArray(sendingQuiz.options)) {
+          sendingQuiz.options.forEach((opt: string, idx: number) => {
+            if (opt) {
+              const label = ["A", "B", "C", "D"][idx] || String.fromCharCode(65 + idx);
+              text += `<b>${label}.</b> ${escapeHTML(opt)}\n`;
+            }
+          });
+          const correctLabel = ["A", "B", "C", "D"][sendingQuiz.correctIndex] || "A";
+          text += `\n<b>ចម្លើយត្រឹមត្រូវ៖</b> ${correctLabel}`;
+        } else {
+          text += `<b>ចម្លើយ៖</b> ${escapeHTML(sendingQuiz.answer || '')}`;
+        }
+        if (sendingQuiz.explanation) {
+          text += `\n\n<b>ការពន្យល់៖</b> ${escapeHTML(sendingQuiz.explanation)}`;
+        }
+
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: telegramChatId.trim(),
+            text,
+            parse_mode: 'HTML'
+          })
+        });
+        if (!res.ok) throw new Error((await res.json()).description);
+
+      } else if (telegramFormat === 'POLL') {
+        if (sendingQuizType !== 'mcq') {
+          throw new Error("ទម្រង់ Poll អាចប្រើប្រាស់បានតែជាមួយសំណួរពហុជ្រើសរើស (MCQ) តែប៉ុណ្ណោះ!");
+        }
+        if (!sendingQuiz.options || !Array.isArray(sendingQuiz.options) || sendingQuiz.options.length < 2) {
+          throw new Error("សំណួរនេះមិនមានជម្រើសគ្រប់គ្រាន់សម្រាប់បង្កើត Poll ទេ។");
+        }
+
+        // Prepare choices
+        const rawOptions = sendingQuiz.options.filter(Boolean);
+        const optionsList = rawOptions.map((opt: string, idx: number) => {
+          const label = ["A", "B", "C", "D"][idx] || String.fromCharCode(65 + idx);
+          return `${label}. ${opt}`.substring(0, 100);
+        });
+
+        if (optionsList.length < 2) throw new Error("ត្រូវការជម្រើសចម្លើយយ៉ាងហោចណាស់ ២។");
+
+        const correctIndex = Math.min(sendingQuiz.correctIndex || 0, optionsList.length - 1);
+
+        const payload: any = {
+          chat_id: telegramChatId.trim(),
+          question: (sendingQuiz.question || '').substring(0, 300),
+          options: optionsList,
+          type: 'quiz',
+          correct_option_id: correctIndex,
+          is_anonymous: true
+        };
+
+        if (sendingQuiz.explanation) {
+          payload.explanation = sendingQuiz.explanation.substring(0, 200);
+        }
+
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPoll`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error((await res.json()).description);
+
+      } else if (telegramFormat === 'IMAGE') {
+        setTelegramProgress("កំពុងបង្កើតរូបភាព...");
+        
+        // Import and use our beautiful, branded quiz image generator
+        const { generateQuizImageBlob } = await import('@/lib/quiz-image-generator');
+        
+        const blob = await generateQuizImageBlob(
+          {
+            question: sendingQuiz.question,
+            type: sendingQuizType || 'mcq',
+            options: sendingQuiz.options,
+            correctIndex: sendingQuiz.correctIndex,
+            answer: sendingQuiz.answer,
+            explanation: sendingQuiz.explanation
+          },
+          {
+            khmerName: editForm?.khmerName,
+            name: editForm?.name,
+            logo: editForm?.logo
+          }
+        );
+
+        if (!blob) throw new Error("បរាជ័យក្នុងការបង្កើតឯកសាររូបភាព!");
+
+        setTelegramProgress("កំពុងផ្ញើរូបភាពទៅ Telegram...");
+        const formData = new FormData();
+        formData.append("chat_id", telegramChatId.trim());
+        formData.append("photo", blob, "quiz.png");
+
+        let caption = `សំណួរ៖ ${(sendingQuiz.question || '').substring(0, 300)}`;
+        if (sendingQuizType === 'mcq') {
+          caption += `\n(សូមពិនិត្យចម្លើយត្រឹមត្រូវ និងការពន្យល់ក្នុងរូបភាព)`;
+        } else {
+          caption += `\n(ចម្លើយ៖ ${(sendingQuiz.answer || '').substring(0, 150)})`;
+        }
+        formData.append("caption", caption);
+
+        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+          method: 'POST',
+          body: formData
+        });
+        if (!res.ok) throw new Error((await res.json()).description);
+      }
+
+      alert("ផ្ញើទៅ Telegram បានជោគជ័យ! 🎉");
+      setSendingQuiz(null);
+    } catch (err: any) {
+      console.error(err);
+      let errorMsg = err.message;
+      if (errorMsg.includes("chat not found")) {
+        errorMsg = "រកមិនឃើញ Chat ទេ! សូមប្រាកដថាអ្នកបានបញ្ជាក់ ID ត្រឹមត្រូវ និងបានបញ្ចូល Bot (@VignasaCambodia_Bot) ទៅក្នុង Group/Channel ជា Admin ឬអ្នកបានចុច Start Bot នេះរួចហើយ។";
+      }
+      setTelegramError(`មិនអាចផ្ញើបានទេ៖ ${errorMsg}`);
+    } finally {
+      setIsSendingTelegram(false);
+      setTelegramProgress("");
+    }
+  };
 
   const validateUrl = (url: string) => {
     if (!url) return "URL is required";
@@ -344,7 +665,7 @@ export default function AdminPage() {
         setAutoSaving(true);
         try {
           const finalData = prepareFormForSave(editForm);
-          await setDoc(doc(db, 'ministries', editingId), finalData);
+          await setDoc(doc(db, 'ministries', editingId), finalData, { merge: true });
         } catch (e) {
           console.error("Auto-save error:", e);
         } finally {
@@ -645,7 +966,7 @@ export default function AdminPage() {
 
   if (loading || authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-transparent">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
@@ -653,7 +974,7 @@ export default function AdminPage() {
 
   if (!user || userRole !== 'ADMIN') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-6 text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-transparent px-6 text-center">
         <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
           <AlertCircle className="w-10 h-10 text-slate-300" />
         </div>
@@ -679,9 +1000,9 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6 md:p-12 font-sans">
+    <div className="min-h-screen bg-transparent p-6 md:p-12 font-sans">
       <div className="max-w-5xl mx-auto">
-        <header className="mb-8 flex items-center justify-between">
+        <header className="mb-4 flex items-center justify-between">
           <div>
             <Link href="/" className="inline-flex items-center text-slate-500 hover:text-slate-800 mb-4 transition-colors">
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -690,21 +1011,42 @@ export default function AdminPage() {
             <h1 className="text-3xl font-bold text-slate-900">Admin Dashboard</h1>
             <p className="text-slate-500">Manage ministry information, quizzes, and terms</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={handleAddMinistry}
-              className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20"
-            >
-              <Plus className="w-4 h-4" /> Add Ministry
-            </button>
-            <button 
-              onClick={resetToInitial}
-              className="text-xs font-bold text-red-500 hover:bg-red-50 px-4 py-2.5 rounded-xl border border-red-100 transition-all"
-            >
-              Reset to Initial Data
-            </button>
-          </div>
+          {activeTab === 'MINISTRIES' && (
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={handleAddMinistry}
+                className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20"
+              >
+                <Plus className="w-4 h-4" /> Add Ministry
+              </button>
+              <button 
+                onClick={resetToInitial}
+                className="text-xs font-bold text-red-500 hover:bg-red-50 px-4 py-2.5 rounded-xl border border-red-100 transition-all"
+              >
+                Reset to Initial Data
+              </button>
+            </div>
+          )}
         </header>
+
+        <div className="flex gap-8 mb-8 border-b border-slate-200">
+          <button 
+            onClick={() => setActiveTab('MINISTRIES')}
+            className={`pb-4 text-sm font-bold transition-colors flex items-center gap-2 ${
+              activeTab === 'MINISTRIES' ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <BookOpen className="w-4 h-4" /> គ្រប់គ្រងក្រសួង
+          </button>
+          <button 
+            onClick={() => setActiveTab('USERS')}
+            className={`pb-4 text-sm font-bold transition-colors flex items-center gap-2 ${
+              activeTab === 'USERS' ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <Users className="w-4 h-4" /> គ្រប់គ្រងសមាជិក
+          </button>
+        </div>
 
         {urlError && (
           <div className={`mb-6 p-4 rounded-xl flex items-start gap-3 ${urlError.includes('success') ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-red-50 text-red-800 border-red-200'} border`}>
@@ -742,7 +1084,8 @@ export default function AdminPage() {
            </div>
         )}
 
-        <DragDropContext onDragEnd={handleDragEnd}>
+        {activeTab === 'MINISTRIES' ? (
+          <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="ministriesList">
             {(provided) => (
               <div 
@@ -915,6 +1258,12 @@ export default function AdminPage() {
                                     categories={editForm.mcqs || []}
                                     updateParent={(newMcqs) => updateField('mcqs', newMcqs)}
                                     type="mcq"
+                                    onSendTelegram={(item, type, elementId) => {
+                                      setSendingQuiz(item);
+                                      setSendingQuizType(type);
+                                      setSendingElementId(elementId);
+                                      setTelegramFormat('POLL');
+                                    }}
                                   />
                                   </div>
                                 </section>
@@ -935,6 +1284,12 @@ export default function AdminPage() {
                                     categories={editForm.shortAnswers || []}
                                     updateParent={(newQa) => updateField('shortAnswers', newQa)}
                                     type="qa"
+                                    onSendTelegram={(item, type, elementId) => {
+                                      setSendingQuiz(item);
+                                      setSendingQuizType(type);
+                                      setSendingElementId(elementId);
+                                      setTelegramFormat('TEXT');
+                                    }}
                                   />
                                   </div>
                                 </section>
@@ -979,7 +1334,347 @@ export default function AdminPage() {
             )}
           </Droppable>
         </DragDropContext>
+        ) : (
+          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">បញ្ជីសមាជិក ({usersInfo.length})</h2>
+                <p className="text-sm text-slate-500 mt-1">គ្រប់គ្រងគណនី និងសិទ្ធិរបស់សមាជិកទាំងអស់</p>
+              </div>
+              <div className="relative w-64">
+                <input 
+                  placeholder="ស្វែងរកសមាជិក..." 
+                  className="w-full text-sm rounded-xl px-4 py-2 border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={userSearchTerm}
+                  onChange={(e) => setUserSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className="px-6 py-4 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-widest text-center w-16">No.</th>
+                    <th className="px-6 py-4 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-widest">ឈ្មោះគណនី (Username)</th>
+                    <th className="px-6 py-4 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-widest">ស្ថានភាពសិទ្ធិ</th>
+                    <th className="px-6 py-4 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-widest">ថ្ងៃចុះឈ្មោះ</th>
+                    <th className="px-6 py-4 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">សកម្មភាព</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usersInfo
+                    .filter(u => u.username?.toLowerCase().includes(userSearchTerm.toLowerCase()))
+                    .map((u: any, idx: number) => (
+                    <tr key={u.username || idx} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4 border-b border-slate-100 text-sm text-slate-500 text-center font-medium">{idx + 1}</td>
+                      <td className="px-6 py-4 border-b border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                            <Users className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-900">{u.username}</p>
+                            {u.role === 'ADMIN' && (
+                              <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-red-600 tracking-widest mt-1 bg-red-50 px-2 py-0.5 rounded-md">
+                                <Shield className="w-3 h-3" /> Admin
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 border-b border-slate-100">
+                        {u.isPremium ? (
+                          <div className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-3 py-1 rounded-lg w-fit border border-amber-200">
+                            <Crown className="w-4 h-4" /> <span className="text-xs font-bold tracking-widest">PREMIUM</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-slate-500 bg-slate-100 px-3 py-1 rounded-lg w-fit border border-slate-200">
+                            <span className="text-xs font-bold tracking-widest">NORMAL</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 border-b border-slate-100 text-sm text-slate-600">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}
+                      </td>
+                      <td className="px-6 py-4 border-b border-slate-100 text-right">
+                        {u.role !== 'ADMIN' && (
+                          <div className="flex justify-end gap-2 items-center">
+                            {u.isPremium ? (
+                              <button 
+                                onClick={() => handleRevokePremium(u.username)}
+                                className="h-9 px-4 text-xs font-bold uppercase tracking-widest rounded-xl border border-red-200 text-red-600 hover:bg-red-50 transition-all flex items-center gap-2"
+                              >
+                                លុប Premium
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={() => handleGrantPremium(u.username)}
+                                className="h-9 px-4 text-xs font-bold uppercase tracking-widest rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all flex items-center gap-2 shadow-md shadow-blue-600/20"
+                              >
+                                <Crown className="w-4 h-4" /> ផ្ដល់ Premium
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleResetPassword(u.username)}
+                              className="h-9 w-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl border border-slate-200 hover:border-blue-200 transition-all"
+                              title="ប្តូរពាក្យសម្ងាត់"
+                            >
+                              <Key className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUser(u.username)}
+                              className="h-9 w-9 flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl border border-slate-200 hover:border-red-200 transition-all"
+                              title="លុបគណនីសមាជិក"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {usersInfo.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest text-sm">
+                        មិនមានទិន្នន័យសមាជិក
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* User Action Modal Dialog */}
+      <AnimatePresence>
+        {userActionDialog && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden relative"
+            >
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-slate-900">
+                    {userActionDialog.type === 'GRANT_PREMIUM' && 'ផ្ដល់សិទ្ធិ Premium'}
+                    {userActionDialog.type === 'REVOKE_PREMIUM' && 'លុបសិទ្ធិ Premium'}
+                    {userActionDialog.type === 'DELETE_USER' && 'លុបគណនី'}
+                    {userActionDialog.type === 'RESET_PASSWORD' && 'ប្តូរពាក្យសម្ងាត់'}
+                  </h3>
+                  <button onClick={() => setUserActionDialog(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  {userActionDialog.type === 'GRANT_PREMIUM' && (
+                    <p className="text-slate-600 text-sm">តើអ្នកពិតជាចង់ផ្ដល់សិទ្ធិ Premium ជាអចិន្ត្រៃយ៍ដល់គណនី &quot;{userActionDialog.username}&quot; មែនទេ?</p>
+                  )}
+                  {userActionDialog.type === 'REVOKE_PREMIUM' && (
+                    <p className="text-slate-600 text-sm">តើអ្នកពិតជាចង់លុបសិទ្ធិ Premium ពីគណនី &quot;{userActionDialog.username}&quot; មែនទេ?</p>
+                  )}
+                  {userActionDialog.type === 'DELETE_USER' && (
+                    <p className="text-slate-600 text-sm font-bold text-red-500">តើអ្នកពិតជាចង់លុបគណនី &quot;{userActionDialog.username}&quot; មែនទេ? សកម្មភាពនេះមិនអាចត្រឡប់វិញបានទេ។</p>
+                  )}
+                  {userActionDialog.type === 'RESET_PASSWORD' && (
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-2">បញ្ចូលពាក្យសម្ងាត់ថ្មីសម្រាប់គណនី &quot;{userActionDialog.username}&quot;</label>
+                      <input 
+                        type="text" 
+                        value={newPasswordValue}
+                        onChange={(e) => setNewPasswordValue(e.target.value)}
+                        className="w-full h-11 px-4 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                        placeholder="ពាក្យសម្ងាត់ថ្មី"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-8 flex gap-3 justify-end border-t border-slate-100 pt-6">
+                  <button onClick={() => setUserActionDialog(null)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors">
+                    បោះបង់
+                  </button>
+                  <button 
+                    onClick={confirmUserAction}
+                    disabled={userActionDialog.type === 'RESET_PASSWORD' && (!newPasswordValue || newPasswordValue.trim().length === 0)}
+                    className={`px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50 ${userActionDialog.type === 'DELETE_USER' || userActionDialog.type === 'REVOKE_PREMIUM' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  >
+                    បញ្ជាក់
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Telegram Sending Modal Dialog */}
+      <AnimatePresence>
+        {sendingQuiz && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 15 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl w-full max-w-md border border-slate-100 relative space-y-5"
+            >
+              {/* Header */}
+              <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                  <Send className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-800 text-sm">ផ្ញើសំណួរទៅកាន់ Telegram</h4>
+                  <p className="text-[10px] text-slate-400 font-medium">បង្ហោះសំណួរទៅឆានែល ឬគ្រុប Telegram ភ្លាមៗ</p>
+                </div>
+                <button 
+                  onClick={() => setSendingQuiz(null)}
+                  className="ml-auto p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Question Summary */}
+              <div className="p-3 bg-slate-50/50 rounded-xl border border-slate-100 space-y-1">
+                <span className="text-[9px] uppercase tracking-wider font-extrabold text-blue-600">សំណួរ៖</span>
+                <p className="text-xs font-bold text-slate-700 line-clamp-2 leading-relaxed">{sendingQuiz.question}</p>
+              </div>
+
+              {/* Form Field: Chat ID */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Telegram Chat ID (ID គ្រុប ឬឆានែល)</label>
+                <input 
+                  type="text"
+                  value={telegramChatId}
+                  onChange={(e) => setTelegramChatId(e.target.value)}
+                  placeholder="ឧទាហរណ៍៖ -100123456789 ឬ @channelname"
+                  className="w-full text-xs px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition-all font-semibold text-slate-800 placeholder-slate-400"
+                />
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {[
+                    { label: "Web QCM Q & A", val: "@web_qcm_q_and_a" },
+                    { label: "Naret26", val: "@Naret26" },
+                    { label: "TheAdvisor26", val: "@theAdvisor26" },
+                    { label: "Family of Law", val: "@familyoflaw" },
+                    { label: "Khmer Family of Law", val: "@khmerfamilyoflaw" },
+                    { label: "User (700259660)", val: "700259660" }
+                  ].map(t => (
+                    <button 
+                      key={t.val}
+                      type="button"
+                      onClick={() => setTelegramChatId(t.val)}
+                      className="px-2 py-1 text-[10px] font-extrabold bg-slate-50 border border-slate-100 rounded-lg hover:bg-blue-50 text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-colors"
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Form Field: Format Selection */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">ជ្រើសរើសទម្រង់ផ្ញើ (Sending Format)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTelegramFormat('POLL')}
+                    disabled={sendingQuizType !== 'mcq'}
+                    className={`py-2 px-1 text-[11px] font-extrabold rounded-xl border transition-all flex flex-col items-center justify-center gap-1.5 ${
+                      telegramFormat === 'POLL' 
+                        ? 'bg-blue-50 border-blue-500 text-blue-600 shadow-sm' 
+                        : sendingQuizType !== 'mcq'
+                          ? 'bg-slate-50 border-slate-150 text-slate-300 cursor-not-allowed opacity-50'
+                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="text-sm">🗳️</span>
+                    <span>ទម្រង់ Poll</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTelegramFormat('TEXT')}
+                    className={`py-2 px-1 text-[11px] font-extrabold rounded-xl border transition-all flex flex-col items-center justify-center gap-1.5 ${
+                      telegramFormat === 'TEXT' 
+                        ? 'bg-blue-50 border-blue-500 text-blue-600 shadow-sm' 
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="text-sm">📝</span>
+                    <span>ទម្រង់ Text</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTelegramFormat('IMAGE')}
+                    className={`py-2 px-1 text-[11px] font-extrabold rounded-xl border transition-all flex flex-col items-center justify-center gap-1.5 ${
+                      telegramFormat === 'IMAGE' 
+                        ? 'bg-blue-50 border-blue-500 text-blue-600 shadow-sm' 
+                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="text-sm">🖼️</span>
+                    <span>ទម្រង់ Image</span>
+                  </button>
+                </div>
+                {sendingQuizType !== 'mcq' && (
+                  <p className="text-[9px] text-amber-600 font-medium leading-relaxed">
+                    * សំណួរប្រភេទចម្លើយខ្លី (Q&A) មិនអាចផ្ញើជាទម្រង់ Poll បានទេ។
+                  </p>
+                )}
+              </div>
+
+              {/* Progress / Error Reporting */}
+              {telegramProgress && (
+                <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 bg-blue-50/50 p-2.5 rounded-xl border border-blue-100/50 animate-pulse">
+                  <span className="w-3.5 h-3.5 border-2 border-slate-300 border-t-blue-600 rounded-full animate-spin" />
+                  <span>{telegramProgress}</span>
+                </div>
+              )}
+              {telegramError && (
+                <div className="text-xs font-semibold text-red-600 bg-red-50 p-2.5 rounded-xl border border-red-150 leading-relaxed">
+                  {telegramError}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSendingQuiz(null)}
+                  className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs rounded-xl transition-all"
+                >
+                  បោះបង់
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendTelegramQuiz}
+                  disabled={isSendingTelegram || !telegramChatId}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/10 transition-all flex items-center justify-center gap-1.5"
+                >
+                  {isSendingTelegram ? 'កំពុងផ្ញើ...' : 'ផ្ញើទៅ Telegram'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
