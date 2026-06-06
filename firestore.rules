@@ -104,6 +104,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /custom_users/{userId} {
+      allow read, write: if true;
+    }
+
     match /documents/{documentId} {
       allow read: if true;
     }

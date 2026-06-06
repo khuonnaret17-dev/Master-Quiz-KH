@@ -1,4 +1,4 @@
-import { domToBlob } from "modern-screenshot";
+import { toBlob } from 'html-to-image';
 
 interface QuizInput {
   question: string;
@@ -67,20 +67,28 @@ export async function generateQuizImageBlob(
 
   // Create card container
   const card = document.createElement("div");
-  card.style.position = "fixed";
-  card.style.top = "-9999px";
+  card.style.position = "absolute";
+  card.style.top = "0px";
   card.style.left = "-9999px";
   card.style.width = "620px";
   card.style.boxSizing = "border-box";
   card.style.zIndex = "-9999";
 
+  const escapeHtml = (unsafe?: string) => {
+    if (!unsafe) return "";
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  };
+
   // HTML and CSS Construction
   card.innerHTML = `
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Kantumruy+Pro:ital,wght@0,300..700;1,300..700&family=Moul&family=Nokora:wght@400;700&display=swap');
-      
       .quiz-card {
-        font-family: 'Kantumruy Pro', 'Nokora', sans-serif;
+        font-family: system-ui, -apple-system, sans-serif, 'Khmer OS', 'Khmer OS System';
         background: linear-gradient(135deg, #094C72 0%, #04253a 100%);
         border: 4px double #D4AF37;
         border-radius: 28px;
@@ -157,11 +165,11 @@ export async function generateQuizImageBlob(
       }
       
       .app-name {
-        font-family: 'Moul', serif;
+        font-family: system-ui, -apple-system, sans-serif, 'Khmer OS', 'Khmer OS System';
+        font-weight: bold;
         color: #FCECB8;
         font-size: 15px;
         line-height: 1.5;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
       }
       
       .app-tagline {
@@ -203,7 +211,8 @@ export async function generateQuizImageBlob(
       .question-badge {
         background: #D4AF37;
         color: #031F33;
-        font-family: 'Moul', serif;
+        font-family: system-ui, -apple-system, sans-serif, 'Khmer OS', 'Khmer OS System';
+        font-weight: bold;
         font-size: 10px;
         padding: 4px 12px;
         border-radius: 6px;
@@ -218,7 +227,6 @@ export async function generateQuizImageBlob(
         line-height: 1.8;
         color: #FFFDF6;
         margin-bottom: 24px;
-        text-shadow: 0 1px 2px rgba(0,0,0,0.2);
         white-space: pre-wrap;
       }
       
@@ -288,7 +296,8 @@ export async function generateQuizImageBlob(
       }
 
       .answer-label {
-        font-family: 'Moul', serif;
+        font-family: system-ui, -apple-system, sans-serif, 'Khmer OS', 'Khmer OS System';
+        font-weight: bold;
         color: #FCECB8;
         font-size: 11px;
         margin-bottom: 6px;
@@ -312,7 +321,8 @@ export async function generateQuizImageBlob(
       }
       
       .explanation-header {
-        font-family: 'Moul', serif;
+        font-family: system-ui, -apple-system, sans-serif, 'Khmer OS', 'Khmer OS System';
+        font-weight: bold;
         color: #FCECB8;
         font-size: 11px;
         margin-bottom: 8px;
@@ -369,7 +379,7 @@ export async function generateQuizImageBlob(
       
       <div class="body-content">
         <span class="question-badge">${isMcq ? "សំណួរពហុចម្លើយ" : "សំណួរចម្លើយខ្លី"}</span>
-        <div class="question-text">${quiz.question}</div>
+        <div class="question-text">${escapeHtml(quiz.question)}</div>
         
         ${
           isMcq
@@ -383,7 +393,7 @@ export async function generateQuizImageBlob(
                   ${opt.label}
                 </div>
                 <div class="option-text ${opt.isCorrect ? "option-text-correct" : ""}">
-                  ${opt.text}
+                  ${escapeHtml(opt.text)}
                 </div>
               </div>
             `
@@ -394,7 +404,7 @@ export async function generateQuizImageBlob(
             : `
           <div class="answer-container">
             <div class="answer-label">ចម្លើយត្រឹមត្រូវ</div>
-            <div class="answer-text">${quiz.answer || "សូមពិនិត្យការពន្យល់លម្អិតខាងក្រោម"}</div>
+            <div class="answer-text">${escapeHtml(quiz.answer) || "សូមពិនិត្យការពន្យល់លម្អិតខាងក្រោម"}</div>
           </div>
         `
         }
@@ -406,7 +416,7 @@ export async function generateQuizImageBlob(
             <div class="explanation-header">
               <span>💡 ការពន្យល់ និងឯកសារយោង</span>
             </div>
-            <div class="explanation-body">${quiz.explanation}</div>
+            <div class="explanation-body">${escapeHtml(quiz.explanation)}</div>
           </div>
         `
             : ""
@@ -446,11 +456,10 @@ export async function generateQuizImageBlob(
     // Ensure the card has a concrete height before capturing
     const rect = card.getBoundingClientRect();
     
-    const blob = await domToBlob(card, {
-      scale: 2.5, // Even higher quality
-      backgroundColor: "transparent",
-      width: 620,
-      height: card.scrollHeight || rect.height,
+    const blob = await toBlob(card, {
+      pixelRatio: 2.5,
+      canvasWidth: 620 * 2.5,
+      canvasHeight: (card.scrollHeight || rect.height) * 2.5,
       style: {
         transform: "none",
         position: "relative",
@@ -459,7 +468,9 @@ export async function generateQuizImageBlob(
         display: "block",
         margin: "0",
         padding: "0",
+        width: "620px"
       },
+      skipFonts: true
     });
 
     if (!blob) {

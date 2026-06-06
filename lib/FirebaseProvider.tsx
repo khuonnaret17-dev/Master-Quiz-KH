@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { db, auth } from './firebase';
-import { collection, onSnapshot, query, setDoc, doc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, setDoc, doc, getDocs, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { ministries as initialMinistries } from './data';
 import { Ministry, UserRole, Progress, PdfDocument } from './types';
@@ -64,67 +64,94 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshMinistries = async () => {
-    const data = await firestoreService.getMinistries();
-    setMinistries(data);
+    // using onSnapshot for ministries instead of one time fetch
   };
   
   const refreshDocuments = async () => {
-    const data = await firestoreService.getDocuments();
-    setDocuments(data);
+    // using onSnapshot for documents instead of one time fetch
   };
 
   useEffect(() => {
-    const checkCustomSession = () => {
-      if (typeof window !== 'undefined') {
-        const savedUserStr = localStorage.getItem('vignasa_custom_user');
-        const savedRoleStr = localStorage.getItem('vignasa_custom_role');
-        
-        if (savedUserStr && savedRoleStr) {
-          try {
-            const parsedUser = JSON.parse(savedUserStr);
-            const username = parsedUser.displayName;
-            const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-            const users = JSON.parse(usersStr);
-            const idx = users.findIndex((u: any) => u.username?.toLowerCase() === username?.toLowerCase());
-            
+    // Set up real-time listener for ministries
+    const unsubscribeMinistries = onSnapshot(collection(db, 'ministries'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Ministry));
+      setMinistries(data);
+    }, (error) => {
+      console.error("Ministries real-time error:", error);
+    });
+
+    // Set up real-time listener for documents
+    const unsubscribeDocuments = onSnapshot(collection(db, 'documents'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as PdfDocument));
+      setDocuments(data);
+    }, (error) => {
+      console.error("Documents real-time error:", error);
+    });
+
+    return () => {
+      unsubscribeMinistries();
+      unsubscribeDocuments();
+    };
+  }, []);
+
+  const checkCustomSession = () => {
+    if (typeof window !== 'undefined') {
+      const savedUserStr = localStorage.getItem('vignasa_custom_user');
+      const savedRoleStr = localStorage.getItem('vignasa_custom_role');
+      
+      if (savedUserStr && savedRoleStr) {
+        try {
+          const parsedUser = JSON.parse(savedUserStr);
+          const username = parsedUser.displayName;
+          if (savedRoleStr === 'ADMIN') {
             setUser(parsedUser);
-            setUserRole(savedRoleStr as UserRole);
-            
-            if (idx !== -1) {
-              const matchedUser = users[idx];
-              setUserProgress(matchedUser.progress || {});
-              const pUntil = matchedUser.premiumUntil || null;
-              let activePremium = matchedUser.isPremium || false;
-              if (activePremium && pUntil) {
-                 const hasExpired = new Date() > new Date(pUntil);
-                 if (hasExpired) activePremium = false;
-              }
-              setIsPremium(activePremium);
-              setPremiumUntil(pUntil);
-              setLinkedBank(matchedUser.linkedBank || null);
-            } else {
-              // Fallback for Admin or unknown
-              if (savedRoleStr === 'ADMIN') {
-                setIsPremium(true);
-              } else {
-                setIsPremium(false);
-              }
-              setUserProgress({});
-              setPremiumUntil(null);
-              setLinkedBank(null);
-            }
-            
+            setUserRole('ADMIN');
+            setIsPremium(true);
             setAuthLoading(false);
             setLoading(false);
             return true;
-          } catch (err) {
-            console.error("Failed custom session parse", err);
           }
+
+          setUser(parsedUser);
+          setUserRole('MEMBER');
+          
+          const userRef = doc(db, 'custom_users', username.toLowerCase());
+          onSnapshot(userRef, (docSnap) => {
+            if (docSnap.exists()) {
+              const data = docSnap.data();
+              setUserProgress(data.progress || {});
+              
+              const pUntil = data.premiumUntil || null;
+              const rawIsPremium = data.isPremium || false;
+              let activePremium = rawIsPremium;
+              if (rawIsPremium && pUntil) {
+                const hasExpired = new Date() > new Date(pUntil);
+                if (hasExpired) {
+                  activePremium = false;
+                }
+              }
+              
+              setIsPremium(activePremium);
+              setPremiumUntil(pUntil);
+              setLinkedBank(data.linkedBank || null);
+            } else {
+               logout();
+            }
+          });
+          
+          setAuthLoading(false);
+          setLoading(false);
+          return true;
+        } catch (err) {
+          console.error("Failed custom session parse", err);
         }
       }
-      return false;
-    };
+    }
+    return false;
+  };
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (checkCustomSession()) {
       return;
     }
@@ -204,6 +231,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       unsubscribeAuth();
       if (unsubscribeData) unsubscribeData();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Periodic check for subscription expiration in real-time
@@ -287,13 +315,12 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      if (typeof window !== 'undefined') {
-        const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-        const users = JSON.parse(usersStr);
-
-        let matchingUser = users.find((u: any) => u.username.toLowerCase() === cleanUsername.toLowerCase() && u.password === password);
-        
-        if (matchingUser) {
+      const userRef = doc(db, 'custom_users', cleanUsername.toLowerCase());
+      const userDoc = await getDoc(userRef);
+      
+      if (userDoc.exists()) {
+        const matchingUser = userDoc.data();
+        if (matchingUser.password === password) {
           const userObj = {
             uid: `custom_${matchingUser.username}`,
             email: `${matchingUser.username}@vignasa.local`,
@@ -301,9 +328,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             photoURL: null
           };
 
-          localStorage.setItem('vignasa_custom_user', JSON.stringify(userObj));
-          localStorage.setItem('vignasa_custom_role', 'MEMBER');
-          localStorage.setItem('vignasa_custom_progress', JSON.stringify(matchingUser.progress || {}));
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('vignasa_custom_user', JSON.stringify(userObj));
+            localStorage.setItem('vignasa_custom_role', 'MEMBER');
+            localStorage.setItem('vignasa_custom_progress', JSON.stringify(matchingUser.progress || {}));
+          }
 
           setUser(userObj);
           setUserRole('MEMBER');
@@ -314,8 +343,9 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         } else {
           return { success: false, error: 'ឈ្មោះគណនី ឬលេខសម្ងាត់មិនត្រឹមត្រូវ!' };
         }
+      } else {
+        return { success: false, error: 'ឈ្មោះគណនី ឬលេខសម្ងាត់មិនត្រឹមត្រូវ!' };
       }
-      return { success: false, error: 'បរិស្ថានរត់មិនគាំទ្រ' };
     } catch (err: any) {
       return { success: false, error: err.message || 'មានបញ្ហាបច្គេសសក្នុងដំណើរការចូលគណនី' };
     }
@@ -343,11 +373,10 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
     try {
       if (typeof window !== 'undefined') {
-        const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-        const users = JSON.parse(usersStr);
+        const userRef = doc(db, 'custom_users', cleanUsername.toLowerCase());
+        const userDoc = await getDoc(userRef);
 
-        const exists = users.some((u: any) => u.username.toLowerCase() === cleanUsername.toLowerCase());
-        if (exists) {
+        if (userDoc.exists()) {
           return { success: false, error: 'ឈ្មោះគណនីនេះត្រូវបានប្រើប្រាស់រួចហើយ!' };
         }
 
@@ -356,14 +385,14 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           password: password,
           role: 'MEMBER' as UserRole,
           progress: {},
-          isPremium: false
+          isPremium: false,
+          createdAt: new Date().toISOString()
         };
 
-        users.push(newUser);
-        localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
+        await setDoc(userRef, newUser);
 
         const userObj = {
-          uid: `custom_${cleanUsername}`,
+          uid: `custom_${cleanUsername.toLowerCase()}`,
           email: `${cleanUsername}@vignasa.local`,
           displayName: cleanUsername,
           photoURL: null
@@ -371,13 +400,14 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
         localStorage.setItem('vignasa_custom_user', JSON.stringify(userObj));
         localStorage.setItem('vignasa_custom_role', 'MEMBER');
-        localStorage.setItem('vignasa_custom_progress', JSON.stringify({}));
 
         setUser(userObj);
         setUserRole('MEMBER');
         setUserProgress({});
         setIsPremium(false);
         setPremiumUntil(null);
+        
+        checkCustomSession();
         return { success: true };
       }
       return { success: false, error: 'បរិស្ថានរត់មិនគាំទ្រ' };
@@ -453,7 +483,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const logout = async () => {
+  async function logout() {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('vignasa_custom_user');
       localStorage.removeItem('vignasa_custom_role');
@@ -466,7 +496,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     setPremiumUntil(null);
     setLinkedBank(null);
     await signOut(auth);
-  };
+  }
 
   const saveProgress = async (progress: Progress) => {
     if (!user) return;
@@ -474,19 +504,13 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     
     if (user.uid && user.uid.startsWith('custom_')) {
       if (typeof window !== 'undefined') {
-        localStorage.setItem('vignasa_custom_progress', JSON.stringify(progress));
         const username = user.displayName;
         if (username && username !== 'អ្នកគ្រប់គ្រង (Admin)') {
           try {
-            const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-            const users = JSON.parse(usersStr);
-            const idx = users.findIndex((u: any) => u.username.toLowerCase() === username.toLowerCase());
-            if (idx !== -1) {
-              users[idx].progress = progress;
-              localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
-            }
+            const userRef = doc(db, 'custom_users', username.toLowerCase());
+            await setDoc(userRef, { progress }, { merge: true });
           } catch (e) {
-            console.error('Failed to update custom member progress in array', e);
+            console.error('Failed to update custom member progress in DB', e);
           }
         }
       }
@@ -508,19 +532,14 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
     if (user.uid && user.uid.startsWith('custom_')) {
       if (typeof window !== 'undefined') {
-        const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-        const users = JSON.parse(usersStr);
         const username = user.displayName;
-        const idx = users.findIndex((u: any) => u.username.toLowerCase() === username.toLowerCase());
-        if (idx !== -1) {
-          users[idx].isPremium = true;
-          users[idx].premiumUntil = premiumUntil;
-          users[idx].linkedBank = { bankName, accountNumber, accountHolder, active: true, linkedAt: new Date().toISOString() };
-          localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
-          setIsPremium(true);
-          setPremiumUntil(premiumUntil);
-          setLinkedBank(users[idx].linkedBank);
-        }
+        const userRef = doc(db, 'custom_users', username.toLowerCase());
+        const linkedBank = { bankName, accountNumber, accountHolder, active: true, linkedAt: new Date().toISOString() };
+        await setDoc(userRef, { 
+          isPremium: true, 
+          premiumUntil: premiumUntil, 
+          linkedBank
+        }, { merge: true });
       }
     } else {
       const userRef = doc(db, 'users', user.uid);
@@ -549,19 +568,13 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     
     if (user.uid && user.uid.startsWith('custom_')) {
       if (typeof window !== 'undefined') {
-        const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-        const users = JSON.parse(usersStr);
         const username = user.displayName;
-        const idx = users.findIndex((u: any) => u.username.toLowerCase() === username.toLowerCase());
-        if (idx !== -1) {
-          users[idx].isPremium = false;
-          users[idx].premiumUntil = null;
-          users[idx].linkedBank = null;
-          localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
-          setIsPremium(false);
-          setPremiumUntil(null);
-          setLinkedBank(null);
-        }
+        const userRef = doc(db, 'custom_users', username.toLowerCase());
+        await setDoc(userRef, { 
+          isPremium: false, 
+          premiumUntil: null, 
+          linkedBank: null
+        }, { merge: true });
       }
     } else {
       const userRef = doc(db, 'users', user.uid);
@@ -592,17 +605,12 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
     if (user.uid && user.uid.startsWith('custom_')) {
       if (typeof window !== 'undefined') {
-        const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-        const users = JSON.parse(usersStr);
         const username = user.displayName;
-        const idx = users.findIndex((u: any) => u.username.toLowerCase() === username.toLowerCase());
-        if (idx !== -1) {
-          users[idx].isPremium = true;
-          users[idx].premiumUntil = premiumUntilTime;
-          localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
-          setIsPremium(true);
-          setPremiumUntil(premiumUntilTime);
-        }
+        const userRef = doc(db, 'custom_users', username.toLowerCase());
+        await setDoc(userRef, { 
+          isPremium: true, 
+          premiumUntil: premiumUntilTime
+        }, { merge: true });
       }
     } else {
       const userRef = doc(db, 'users', user.uid);

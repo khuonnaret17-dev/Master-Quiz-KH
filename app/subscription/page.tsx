@@ -20,15 +20,6 @@ export default function SubscriptionPage() {
     { id: 'LIFETIME', name: 'គម្រោងប្រើប្រាស់រហូត', price: '30$', duration: 'ប្រើប្រាស់រហូត', paywayUrl: 'https://link.payway.com.kh/ABAPAYg6450809C' },
   ];
 
-  const handleCopyUsername = () => {
-    let username = user?.displayName || user?.email || 'Unknown';
-    if (user?.uid?.startsWith('custom_')) {
-      username = user.uid.replace('custom_', '');
-    }
-    navigator.clipboard.writeText(username);
-    alert('បានចម្លងឈ្មោះគណនី: ' + username);
-  };
-
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -57,26 +48,6 @@ export default function SubscriptionPage() {
           <h1 className="text-3xl md:text-4xl font-black text-slate-800 mb-4 font-khmer">ជ្រើសរើសគម្រោង Premium</h1>
           <p className="text-slate-600 font-khmer">បង្កើនសមត្ថភាពសិក្សាជាមួយគម្រោងពិសេសរបស់យើង</p>
         </header>
-
-        <div className="mb-10 p-6 bg-white rounded-2xl shadow-sm border border-slate-200 max-w-2xl mx-auto text-center relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-10">
-            <Crown className="w-24 h-24 text-amber-500" />
-          </div>
-          <h2 className="text-lg font-bold text-slate-800 mb-2 font-khmer relative z-10">ចំណាំសំខាន់មុននឹងបង់ប្រាក់</h2>
-          <p className="text-slate-600 mb-4 font-khmer relative z-10 text-sm">
-            សូមចម្លងឈ្មោះគណនីរបស់អ្នកទុកជាមុន។ បន្ទាប់ពីការផ្ទេរប្រាក់រួចរាល់ សូមផ្ញើវិក្កយបត្រ (Receipt) និងផ្ដល់ឈ្មោះគណនីនេះទៅកាន់អ្នកគ្រប់គ្រងដើម្បីបើកសិទ្ធិប្រើប្រាស់គម្រោង Premium។
-          </p>
-          <div className="inline-flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 relative z-10">
-            <span className="text-sm text-slate-500 font-khmer">ឈ្មោះគណនីរបស់អ្នក៖</span>
-            <span className="font-mono font-bold text-slate-900 text-lg bg-yellow-100 px-3 py-1 rounded-md">{currentUsername}</span>
-            <button 
-              onClick={handleCopyUsername}
-              className="px-4 py-2 bg-[#1B365D] text-white rounded-lg text-sm font-bold hover:bg-slate-800 transition-colors font-khmer"
-            >
-              ចម្លង (Copy)
-            </button>
-          </div>
-        </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           {plans.map((plan) => (

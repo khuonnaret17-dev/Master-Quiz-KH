@@ -16,6 +16,7 @@ import SafeImage from "@/components/SafeImage";
 export default function Home() {
   const { ministries, loading, authLoading, user, userProgress, userRole, error, isPremium, login, loginCustomMember, registerCustomMember, loginCustomAdmin, isLoggingIn } = useFirebase();
   const [searchTerm, setSearchTerm] = useState("");
+  const [mainTab, setMainTab] = useState<'INSTITUTION' | 'SUBJECT'>('INSTITUTION');
   const router = useRouter();
 
   // Custom dual-mode authentication state fields
@@ -85,42 +86,70 @@ export default function Home() {
 
   const isBlocked = !user;
 
-  const filteredMinistries = ministries.filter(m => 
-    m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.khmerName.includes(searchTerm)
-  );
+  const filteredMinistries = ministries.filter(m => {
+    const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase()) || m.khmerName.includes(searchTerm);
+    const matchesGroup = (mainTab === 'INSTITUTION' && (!m.groupType || m.groupType === 'INSTITUTION')) || 
+                         (mainTab === 'SUBJECT' && m.groupType === 'SUBJECT');
+    return matchesSearch && matchesGroup;
+  });
 
   return (
     <main className="min-h-screen bg-transparent p-4 md:p-12">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <header className="mb-8 md:mb-12 text-center relative pt-4 md:pt-0">
-          <div className="flex flex-wrap gap-3 justify-center md:justify-end items-center mb-6 z-10 relative">
-            {userRole === 'ADMIN' && (
-              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                <Link 
-                  href="/admin" 
-                  id="admin-link"
-                  className="flex items-center gap-2 px-6 py-2.5 bg-white border border-slate-200 rounded-2xl text-slate-600 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-all shadow-sm group font-bold text-sm"
-                >
-                  <Info className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                  <span>គ្រប់គ្រង (Admin)</span>
-                </Link>
-              </motion.div>
-            )}
-            <div className="md:ml-2">
-              <UserNav />
-            </div>
-          </div>
           <div 
-            className="pt-12 md:pt-16 pb-12 flex flex-col items-center relative mx-2 md:mx-4 overflow-hidden rounded-[2.5rem] shadow-2xl" 
+            className="pt-4 md:pt-6 pb-12 flex flex-col items-center relative mx-2 md:mx-4 overflow-hidden rounded-[2.5rem] shadow-2xl" 
             style={{ 
               backgroundColor: '#094C72',
-              backgroundImage: 'linear-gradient(135deg, #094C72 0%, #052c42 100%), url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M0 0h20v20H0V0zm10 17L3 10l7-7 7 7-7 7z\' fill=\'%23D4AF37\' fill-opacity=\'0.04\' fill-rule=\'evenodd\'/%3E%3C/svg%3E")',
+              backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M0 0h20v20H0V0zm10 17L3 10l7-7 7 7-7 7z\' fill=\'%23D4AF37\' fill-opacity=\'0.04\' fill-rule=\'evenodd\'/%3E%3C/svg%3E")',
               border: '2px solid rgba(212, 175, 55, 0.35)',
               boxShadow: '0 20px 40px -15px rgba(5,44,66,0.3), inset 0 0 40px rgba(212,175,55,0.05)'
             }}
           >
+            {/* Animated Background Gradients */}
+            <div className="absolute inset-0 bg-gradient-to-br from-[#094C72]/80 via-[#052c42]/80 to-[#031926]/90 mix-blend-overlay z-0"></div>
+            
+            <motion.div
+              animate={{ 
+                x: [0, 50, 0],
+                y: [0, -30, 0],
+                scale: [1, 1.2, 1],
+                opacity: [0.3, 0.6, 0.3],
+              }}
+              transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute top-0 right-0 md:right-1/4 w-[30rem] h-[30rem] bg-amber-500/20 rounded-full blur-[120px] pointer-events-none -translate-y-1/2 z-0"
+            />
+            <motion.div
+              animate={{ 
+                x: [0, -50, 0],
+                y: [0, 30, 0],
+                scale: [1, 1.4, 1],
+                opacity: [0.2, 0.5, 0.2],
+              }}
+              transition={{ duration: 10, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+              className="absolute bottom-0 left-0 md:left-1/4 w-[30rem] h-[30rem] bg-blue-400/20 rounded-full blur-[120px] pointer-events-none translate-y-1/2 z-0"
+            />
+            
+            {/* Top Navigation Row inside banner */}
+            <div className="w-full flex justify-end items-center gap-3 px-4 sm:px-6 md:px-8 mb-4 md:mb-6 z-30 relative">
+              {userRole === 'ADMIN' && (
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Link 
+                    href="/admin" 
+                    id="admin-link"
+                    className="flex items-center gap-2 px-4 py-2 md:px-5 md:py-2.5 bg-gradient-to-r from-[#D4AF37] to-[#FCECB8] border border-[#FCECB8]/50 rounded-2xl text-[#094C72] hover:shadow-[0_0_20px_rgba(212,175,55,0.4)] transition-all shadow-md group font-black text-xs md:text-sm font-khmer"
+                  >
+                    <Info className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+                    <span className="hidden sm:inline">គ្រប់គ្រង (Admin)</span>
+                  </Link>
+                </motion.div>
+              )}
+              <div className="text-white relative z-50 flex-shrink-0">
+                <UserNav />
+              </div>
+            </div>
+
             {/* Glowing amber ornament lights under-layer */}
             <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
             <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-48 h-48 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
@@ -129,7 +158,7 @@ export default function Home() {
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.5 }}
-              className="relative w-32 h-32 md:w-36 md:h-36 mb-6 flex items-center justify-center bg-white rounded-full shadow-2xl ring-4 ring-[#D4AF37]/30 overflow-hidden"
+              className="relative w-32 h-32 md:w-36 md:h-36 mb-6 flex items-center justify-center bg-white rounded-full shadow-[0_0_50px_rgba(212,175,55,0.6)] ring-4 ring-[#D4AF37]/50 overflow-hidden hover:scale-105 hover:shadow-[0_0_60px_rgba(212,175,55,0.8)] transition-all duration-300"
             >
               <SafeImage 
                 src="https://i.ibb.co/FkGwqJVL/3-QCM-Ep4-1.jpg"
@@ -137,7 +166,7 @@ export default function Home() {
                 fill
                 priority
                 unoptimized
-                className="object-cover"
+                className="object-cover drop-shadow-xl"
               />
             </motion.div>
             <motion.h1 
@@ -156,34 +185,74 @@ export default function Home() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.3 }}
-              className="mt-2 flex flex-col items-center gap-3 px-4"
+              className="mt-2 flex flex-col items-center gap-4 px-4"
             >
-              <div className="flex items-center gap-3 px-6 py-2 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-xl">
-                <div className="flex flex-col items-center">
-                  <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-[#FCECB8]/70 mb-0.5">ទិន្នន័យសរុប</span>
-                  <span className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#FFFDF6] to-[#E2BD55] font-khmer">
-                    {(() => {
-                      const total = ministries.reduce((acc, m) => {
-                        let count = (m.quizzes?.length || 0);
-                        const countItems = (cats?: any[]): number => {
-                          if (!cats) return 0;
-                          return cats.reduce((sum, cat) => {
-                            return sum + (cat.items?.length || 0) + countItems(cat.subCategories);
-                          }, 0);
-                        };
-                        return acc + count + countItems(m.mcqs) + countItems(m.shortAnswers);
-                      }, 0);
-                      
-                      const khmerDigits = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
-                      return total.toString().split('').map(d => khmerDigits[parseInt(d)] || d).join('');
-                    })()}
-                  </span>
+              <div className="relative p-[1.5px] rounded-2xl overflow-hidden mx-auto md:w-auto w-full max-w-3xl group shadow-2xl">
+                {/* Rotating Conic Gradients for the border */}
+                <div className="absolute inset-[-1000%] animate-[spin_4s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#E2BD55_0%,transparent_10%,transparent_100%)]" />
+                <div className="absolute inset-[-1000%] animate-[spin_4s_linear_infinite] bg-[conic-gradient(from_270deg_at_50%_50%,#E2BD55_0%,transparent_10%,transparent_100%)]" />
+                
+                <div className="relative bg-gradient-to-r from-[#094C72]/90 to-[#052c42]/90 backdrop-blur-xl border-white/5 rounded-[15px] p-1.5 flex flex-col md:flex-row items-center w-full h-full">
+                {/* Total Data Section */}
+                <div className="flex items-center justify-center gap-3 px-4 py-2 w-full md:w-auto">
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-[#FCECB8]/70 mb-0.5">ទិន្នន័យសរុប</span>
+                    <span className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#FFFDF6] to-[#E2BD55] font-khmer">
+                      {(() => {
+                        const total = ministries.reduce((acc, m) => {
+                          let count = (m.quizzes?.length || 0);
+                          const countItems = (cats?: any[]): number => {
+                            if (!cats) return 0;
+                            return cats.reduce((sum, cat) => {
+                              return sum + (cat.items?.length || 0) + countItems(cat.subCategories);
+                            }, 0);
+                          };
+                          return acc + count + countItems(m.mcqs) + countItems(m.shortAnswers);
+                        }, 0);
+                        
+                        const khmerDigits = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
+                        return total.toString().split('').map(d => khmerDigits[parseInt(d)] || d).join('');
+                      })()}
+                    </span>
+                  </div>
+                  <div className="w-px h-8 bg-white/20" />
+                  <div className="flex flex-col items-start bg-transparent">
+                    <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider whitespace-nowrap">វិញ្ញាសាដែលបានបញ្ចូល</span>
+                    <span className="text-[11px] text-[#FCECB8] font-medium whitespace-nowrap">ក្នុងប្រព័ន្ធសិក្សាផ្លូវការ</span>
+                  </div>
+                  <div className="hidden md:block w-px h-10 bg-white/20 ml-2" />
                 </div>
-                <div className="w-px h-8 bg-white/20" />
-                <div className="flex flex-col items-start">
-                  <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">វិញ្ញាសាដែលបានបញ្ចូល</span>
-                  <span className="text-[11px] text-[#FCECB8] font-medium">ក្នុងប្រព័ន្ធសិក្សាផ្លូវការ</span>
-                </div>
+
+                {/* Main Tabs (only if logged in) */}
+                {user && (
+                  <div className="flex flex-col md:flex-row items-center gap-2 w-full md:w-auto">
+                    <div className="flex gap-1 w-full md:w-[320px]">
+                      <button
+                        type="button"
+                        onClick={() => setMainTab('INSTITUTION')}
+                        className={`flex-1 px-4 py-2.5 text-center rounded-xl text-sm font-black transition-all font-khmer cursor-pointer whitespace-nowrap ${
+                          mainTab === 'INSTITUTION'
+                            ? 'bg-[#E2BD55] text-[#094C72] shadow-md'
+                            : 'text-white hover:text-[#E2BD55] hover:bg-white/10'
+                        }`}
+                      >
+                        ក្រសួង ស្ថាប័ន
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMainTab('SUBJECT')}
+                        className={`flex-1 px-4 py-2.5 text-center rounded-xl text-sm font-black transition-all font-khmer cursor-pointer whitespace-nowrap ${
+                          mainTab === 'SUBJECT'
+                            ? 'bg-[#E2BD55] text-[#094C72] shadow-md'
+                            : 'text-white hover:text-[#E2BD55] hover:bg-white/10'
+                        }`}
+                      >
+                        វិញ្ញាសា
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               </div>
             </motion.div>
           </div>
@@ -301,20 +370,27 @@ export default function Home() {
                       </div>
 
                       {isRegistering && (
-                        <div className="space-y-1 text-left">
-                          <label className="text-[10px] font-bold text-slate-500 font-khmer ml-1">បញ្ជាក់លេខសម្ងាត់ (Confirm Password)</label>
-                          <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                            <input 
-                              type="password"
-                              required
-                              placeholder="បញ្ជាក់លេខសម្ងាត់"
-                              value={conPassword}
-                              onChange={(e) => setConPassword(e.target.value)}
-                              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#094C72] transition-all font-sans"
-                            />
+                        <>
+                          <div className="space-y-1 text-left">
+                            <label className="text-[10px] font-bold text-slate-500 font-khmer ml-1">បញ្ជាក់លេខសម្ងាត់ (Confirm Password)</label>
+                            <div className="relative">
+                              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                              <input 
+                                type="password"
+                                required
+                                placeholder="បញ្ជាក់លេខសម្ងាត់"
+                                value={conPassword}
+                                onChange={(e) => setConPassword(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#094C72] transition-all font-sans"
+                              />
+                            </div>
                           </div>
-                        </div>
+                          <div className="bg-blue-50 border border-blue-100 p-2.5 rounded-xl text-left">
+                            <p className="text-[11px] text-blue-800 font-khmer leading-relaxed">
+                              ✅ គណនីដែលបានចុះឈ្មោះរួច អាចយកទៅ Login ប្រើប្រាស់លើទូរស័ព្ទ ឬកុំព្យូទ័រផ្សេងទៀតបានធម្មតា។
+                            </p>
+                          </div>
+                        </>
                       )}
                     </>
                   ) : (

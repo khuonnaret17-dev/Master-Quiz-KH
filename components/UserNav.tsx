@@ -341,13 +341,6 @@ export function UserNav() {
                 )}
               </div>
               <div className="p-2">
-                <Link
-                  href="/subscription"
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-slate-700 font-medium hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
-                >
-                  <Crown className="w-4 h-4 text-amber-500" />
-                  ប្ដូរទៅជា Premium
-                </Link>
                 <button
                   onClick={logout}
                   className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 font-medium hover:bg-red-50 rounded-xl transition-colors cursor-pointer"

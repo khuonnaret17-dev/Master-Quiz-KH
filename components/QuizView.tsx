@@ -290,7 +290,7 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
                 សំណួរទី {currentIdx + 1} នៃ {quizzes.length}
               </span>
             </div>
-            <h2 className="text-2xl md:text-4xl font-bold leading-[1.3] md:leading-[1.2] text-[#f8004c]">
+            <h2 className="text-2xl md:text-4xl font-bold leading-[1.3] md:leading-[1.2] text-[#f8004c] whitespace-pre-wrap">
               {currentQuiz.question}
             </h2>
           </div>
@@ -490,9 +490,17 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
                         <HelpCircle className="w-5 h-5 md:w-6 md:h-6" />
                       </div>
                       <div className="space-y-2">
-                        <h3 className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">ការពន្យល់ (Explanation)</h3>
-                        <p className="text-sm md:text-base leading-relaxed text-[#1A1A1A]/80 italic font-medium">
-                          {currentQuiz.explanation}
+                        <h3 className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">ឯកសារយោង / ពន្យល់</h3>
+                        <p className="text-sm md:text-base leading-relaxed text-[#1A1A1A]/80 italic font-medium whitespace-pre-wrap">
+                          {currentQuiz.explanation.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
+                            part.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/g) ? (
+                              <a key={i} href={part.startsWith('www.') ? `https://${part}` : part} target="_blank" rel="noopener noreferrer" className="text-[#D4AF37] hover:text-[#B3932F] underline break-all not-italic font-bold relative z-10 pointer-events-auto">
+                                {part}
+                              </a>
+                            ) : (
+                              <span key={i}>{part}</span>
+                            )
+                          )}
                         </p>
                       </div>
                     </div>

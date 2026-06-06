@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Ministry, QuizType } from '@/lib/types';
-import { HelpCircle, MessageSquare, Globe, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Ministry, QuizType, PdfDocument } from '@/lib/types';
+import { HelpCircle, MessageSquare, Globe, AlertCircle, ChevronDown, ChevronUp, FileText, Download } from 'lucide-react';
 
 interface WebDocumentViewProps {
   ministry: Ministry;
+  documents?: PdfDocument[];
 }
 
 export const CategorySection = ({ category, items, defaultExpanded = false }: { category: string, items: any[], defaultExpanded?: boolean }) => {
@@ -64,15 +65,39 @@ export const CategorySection = ({ category, items, defaultExpanded = false }: { 
                     <div className="bg-blue-50/70 rounded-xl p-5 border border-blue-100/50 mt-2">
                       <p className="text-slate-800 leading-relaxed font-khmer whitespace-pre-wrap">
                         <span className="font-bold text-blue-800 mr-2 block mb-1">ចម្លើយ៖</span>
-                        {item.answer}
+                        {item.answer.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
+                          part.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/g) ? (
+                            <a key={i} href={part.startsWith('www.') ? `https://${part}` : part} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline break-all relative z-10 pointer-events-auto">
+                              {part}
+                            </a>
+                          ) : (
+                            <span key={i}>{part}</span>
+                          )
+                        )}
                       </p>
                     </div>
                   )}
 
                   {/* Explanation */}
                   {item.explanation && (
-                    <div className="bg-amber-50/80 rounded-xl p-4 text-sm mt-3 border border-amber-200/50">
-                      <span className="text-amber-900/90 whitespace-pre-wrap">{item.explanation}</span>
+                    <div className="mt-4 p-4 md:p-6 rounded-2xl bg-white/90 border border-[#D4AF37]/20 shadow-sm flex flex-col md:flex-row gap-3 md:gap-4">
+                      <div className="flex-shrink-0 w-8 h-8 md:w-10 md:h-10 bg-[#D4AF37]/10 rounded-xl flex items-center justify-center text-[#D4AF37]">
+                        <HelpCircle className="w-4 h-4 md:w-5 md:h-5" />
+                      </div>
+                      <div className="space-y-1 md:space-y-2">
+                        <h3 className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">ឯកសារយោង / ពន្យល់</h3>
+                        <p className="text-sm leading-relaxed text-[#1A1A1A]/80 italic font-medium whitespace-pre-wrap">
+                          {item.explanation.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
+                            part.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/g) ? (
+                              <a key={i} href={part.startsWith('www.') ? `https://${part}` : part} target="_blank" rel="noopener noreferrer" className="text-[#D4AF37] hover:text-[#B3932F] underline break-all not-italic font-bold relative z-10 pointer-events-auto">
+                                {part}
+                              </a>
+                            ) : (
+                              <span key={i}>{part}</span>
+                            )
+                          )}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -85,11 +110,11 @@ export const CategorySection = ({ category, items, defaultExpanded = false }: { 
   );
 };
 
-export const WebDocumentView: React.FC<WebDocumentViewProps> = ({ ministry }) => {
+export const WebDocumentView: React.FC<WebDocumentViewProps> = ({ ministry, documents = [] }) => {
   const quizzes = ministry.quizzes || [];
   const [activeType, setActiveType] = useState<string | null>(null);
 
-  if (quizzes.length === 0) {
+  if (quizzes.length === 0 && documents.length === 0) {
     return (
       <div className="bg-white rounded-3xl p-12 text-center shadow-sm">
         <AlertCircle className="w-12 h-12 text-slate-300 mx-auto mb-4" />
@@ -113,13 +138,16 @@ export const WebDocumentView: React.FC<WebDocumentViewProps> = ({ ministry }) =>
   }, {} as Record<string, Record<string, typeof quizzes>>);
 
   const typeKeys = Object.keys(grouped);
+  if (documents.length > 0) {
+    typeKeys.push('ឯកសារយោង (PDF)');
+  }
   
   // Set initial active type if null
   if (!activeType && typeKeys.length > 0) {
     setActiveType(typeKeys[0]);
   }
 
-  const activeCategories = activeType ? grouped[activeType] : {};
+  const activeCategories = (activeType && activeType !== 'ឯកសារយោង (PDF)') ? grouped[activeType] : {};
 
   return (
     <div className="rounded-[2rem] shadow-xl p-8 md:p-12 max-w-4xl mx-auto space-y-8" style={{ backgroundColor: '#ffffca' }}>
@@ -144,6 +172,7 @@ export const WebDocumentView: React.FC<WebDocumentViewProps> = ({ ministry }) =>
               {typeLabel === 'សំណួរពហុចម្លើយ' && <HelpCircle className="w-4 h-4" />}
               {typeLabel === 'សំណួរចម្លើយ' && <MessageSquare className="w-4 h-4" />}
               {typeLabel === 'ពន្យល់ពាក្យ' && <Globe className="w-4 h-4" />}
+              {typeLabel === 'ឯកសារយោង (PDF)' && <FileText className="w-4 h-4" />}
               {typeLabel}
             </button>
           ))}
@@ -151,7 +180,7 @@ export const WebDocumentView: React.FC<WebDocumentViewProps> = ({ ministry }) =>
       )}
 
       <div className="space-y-16 pt-4">
-        {activeType && (
+        {activeType && activeType !== 'ឯកសារយោង (PDF)' && (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4">
             <h2 className="text-2xl font-bold text-[#1B365D] border-b-2 border-[#1B365D]/10 pb-4 flex items-center gap-3">
               {activeType === 'សំណួរពហុចម្លើយ' && <HelpCircle className="w-6 h-6" />}
@@ -163,6 +192,34 @@ export const WebDocumentView: React.FC<WebDocumentViewProps> = ({ ministry }) =>
             <div className="space-y-4">
               {Object.entries(activeCategories).map(([category, items]) => (
                 <CategorySection key={category} category={category} items={items as any[]} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeType === 'ឯកសារយោង (PDF)' && documents.length > 0 && (
+          <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4">
+            <h2 className="text-2xl font-bold text-[#1B365D] border-b-2 border-[#1B365D]/10 pb-4 flex items-center gap-3">
+              <FileText className="w-6 h-6" />
+              ឯកសារយោង (PDF)
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {documents.map(doc => (
+                <a 
+                  key={doc.id}
+                  href={doc.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-white/70 p-5 rounded-2xl border border-white flex items-center justify-between hover:bg-white hover:shadow-lg transition-all group"
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="w-10 h-10 bg-red-100 text-red-600 rounded-xl flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <span className="font-bold text-slate-800 line-clamp-2 text-sm">{doc.title}</span>
+                  </div>
+                  <Download className="w-5 h-5 text-slate-400 group-hover:text-blue-600 shrink-0 ml-3" />
+                </a>
               ))}
             </div>
           </div>

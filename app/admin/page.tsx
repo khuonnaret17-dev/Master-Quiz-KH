@@ -5,11 +5,11 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, useRef } from 'react';
 import { useFirebase } from '@/lib/FirebaseProvider';
 import { db } from '@/lib/firebase';
-import { setDoc, doc, deleteDoc } from 'firebase/firestore';
+import { setDoc, doc, deleteDoc, collection, onSnapshot, updateDoc } from 'firebase/firestore';
 import { ministries as initialMinistries } from '@/lib/data';
 import { Ministry } from '@/lib/types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Save, X, Pencil, ArrowLeft, Globe, AlertCircle, CheckCircle2, Plus, Trash2, ChevronDown, ChevronUp, GripVertical, ExternalLink, Send, Users, Shield, Crown, Key, BookOpen } from 'lucide-react';
+import { Save, X, Pencil, ArrowLeft, ArrowUp, ArrowDown, Globe, AlertCircle, CheckCircle2, Plus, Trash2, ChevronDown, ChevronUp, GripVertical, ExternalLink, Send, Users, Shield, Crown, Key, BookOpen, Building2 } from 'lucide-react';
 import Link from 'next/link';
 import SafeImage from '@/components/SafeImage';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -20,13 +20,15 @@ function CategoryEditor({
   updateParent,
   type,
   depth = 0,
+  parentPath = [],
   onSendTelegram
 }: {
   categories: any[];
   updateParent: (newCategories: any[]) => void;
   type: 'mcq' | 'qa';
   depth?: number;
-  onSendTelegram?: (item: any, type: 'mcq' | 'qa', elementId: string) => void;
+  parentPath?: string[];
+  onSendTelegram?: (item: any, type: 'mcq' | 'qa', elementId: string, categoryName: string) => void;
 }) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
@@ -65,7 +67,7 @@ function CategoryEditor({
               if (currentItem) items.push(currentItem);
               currentItem = type === 'mcq' 
                 ? { question: qMatch[2], options: [], correctIndex: 0, explanation: '' }
-                : { question: qMatch[2], answer: '' };
+                : { question: qMatch[2], answer: '', explanation: '' };
               inAnswer = false;
               lastLineBlank = false;
               return;
@@ -96,6 +98,7 @@ function CategoryEditor({
                // If there is an explanation indicator (like 'យោង' or 'ពន្យល់'), or if options are already populated
                const isExplanationLine = trimmedLine.startsWith('យោង') || 
                                          trimmedLine.startsWith('ពន្យល់') || 
+                                         trimmedLine.startsWith('ឯកសារយោង') || 
                                          trimmedLine.toLowerCase().startsWith('ref') || 
                                          trimmedLine.toLowerCase().startsWith('source') ||
                                          currentItem.options.length > 0;
@@ -108,15 +111,24 @@ function CategoryEditor({
                }
             }
           } else if (type === 'qa' && currentItem) {
-            // Answer looks like "ចម្លើយ: ..." or just text
-            if (trimmedLine.startsWith('ចម្លើយ')) {
+            // Check for explanation/reference
+            if (trimmedLine.startsWith('យោង') || trimmedLine.startsWith('ពន្យល់') || trimmedLine.startsWith('ឯកសារយោង') || trimmedLine.toLowerCase().startsWith('ref') || trimmedLine.toLowerCase().startsWith('source')) {
+                currentItem.explanation = currentItem.explanation ? currentItem.explanation + '\n' + trimmedLine : trimmedLine;
+                inAnswer = false; // "យោង" usually marks the end of the answer
+            } else if (trimmedLine.startsWith('ចម្លើយ') || trimmedLine.startsWith('ចំលើយ')) {
+                // Answer looks like "ចម្លើយ: ..." or just text
                 inAnswer = true;
-                const ansText = trimmedLine.replace(/^ចម្លើយ\s*[:៖]?\s*/, '').trim();
+                const ansText = trimmedLine.replace(/^(ចម្លើយ|ចំលើយ)\s*[:៖]?\s*/, '').trim();
                 currentItem.answer = currentItem.answer ? currentItem.answer + '\n' + ansText : ansText;
             } else if (inAnswer) {
                 currentItem.answer = currentItem.answer ? currentItem.answer + '\n' + trimmedLine : trimmedLine;
             } else {
-                currentItem.question = currentItem.question + '\n' + trimmedLine;
+                // If it's after a question but before answer or after explanation
+                if (currentItem.explanation) {
+                    currentItem.explanation += '\n' + trimmedLine;
+                } else {
+                    currentItem.question = currentItem.question + '\n' + trimmedLine;
+                }
             }
           }
           lastLineBlank = false;
@@ -140,6 +152,27 @@ function CategoryEditor({
     setExpanded(prev => ({ ...prev, [cIdx]: true })); // Expand when adding sub
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const target = e.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const value = target.value;
+      
+      const newValue = value.substring(0, start) + "\t" + value.substring(end);
+      
+      // Update item state based on which textarea it is
+      // This is a bit tricky because we're inside a loop, but we can use the ref or just set the value directly then trigger change
+      target.value = newValue;
+      target.selectionStart = target.selectionEnd = start + 1;
+      
+      // Trigger the appropriate onChange
+      const event = { target: { value: newValue } } as any;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  };
+
   return (
     <div className={`space-y-4 ${depth > 0 ? 'ml-6 mt-2 border-l border-slate-200 pl-4' : ''}`}>
       {categories.map((cat, cIdx) => {
@@ -147,6 +180,34 @@ function CategoryEditor({
         return (
         <div key={cIdx} className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-0.5">
+              <button 
+                onClick={() => {
+                  if (cIdx > 0) {
+                    const newCats = [...categories];
+                    [newCats[cIdx - 1], newCats[cIdx]] = [newCats[cIdx], newCats[cIdx - 1]];
+                    updateParent(newCats);
+                  }
+                }}
+                disabled={cIdx === 0}
+                className="text-slate-300 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-300 transition-colors"
+              >
+                <ArrowUp className="w-3.5 h-3.5" />
+              </button>
+              <button 
+                onClick={() => {
+                  if (cIdx < categories.length - 1) {
+                    const newCats = [...categories];
+                    [newCats[cIdx + 1], newCats[cIdx]] = [newCats[cIdx], newCats[cIdx + 1]];
+                    updateParent(newCats);
+                  }
+                }}
+                disabled={cIdx === categories.length - 1}
+                className="text-slate-300 hover:text-blue-500 disabled:opacity-30 disabled:hover:text-slate-300 transition-colors"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
             <button
               onClick={() => toggleExpand(cIdx)}
               className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
@@ -188,6 +249,7 @@ function CategoryEditor({
                         className="w-full font-bold bg-transparent outline-none border-b border-slate-100 pb-1.5 resize-none overflow-hidden"
                         value={item.question}
                         rows={item.question ? item.question.split('\n').length : 1}
+                        onKeyDown={handleKeyDown}
                         onChange={(e) => {
                           const newItems = [...cat.items];
                           newItems[iIdx].question = e.target.value;
@@ -228,6 +290,7 @@ function CategoryEditor({
                           value={item.answer}
                           placeholder="Answer"
                           rows={item.answer ? item.answer.split('\n').length : 1}
+                          onKeyDown={handleKeyDown}
                           onChange={(e) => {
                             const newItems = [...cat.items];
                             newItems[iIdx].answer = e.target.value;
@@ -242,6 +305,7 @@ function CategoryEditor({
                         value={item.explanation || ''}
                         placeholder="Explanation (ការពន្យល់ - ស្រេចចិត្ត)"
                         rows={item.explanation ? item.explanation.split('\n').length : 1}
+                        onKeyDown={handleKeyDown}
                         onChange={(e) => {
                           const newItems = [...cat.items];
                           newItems[iIdx].explanation = e.target.value;
@@ -254,7 +318,10 @@ function CategoryEditor({
                         {onSendTelegram ? (
                           <button
                             type="button"
-                            onClick={() => onSendTelegram(item, type, uniqueId)}
+                            onClick={() => {
+                              const fullCategoryName = [...parentPath, cat.category].join('_').replace(/[\s>]+/g, '_');
+                              onSendTelegram(item, type, uniqueId, fullCategoryName)
+                            }}
                             className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-extrabold text-blue-600 bg-blue-50/50 hover:bg-blue-100 hover:text-blue-700 px-3 py-1.5 rounded-lg transition-all border border-blue-100/50"
                           >
                             <Send className="w-3 h-3" />
@@ -262,16 +329,46 @@ function CategoryEditor({
                           </button>
                         ) : <div />}
                         
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            const newItems = cat.items.filter((_: any, i: number) => i !== iIdx);
-                            handleUpdateCategory(cIdx, { ...cat, items: newItems });
-                          }}
-                          className="text-slate-400 hover:text-red-550 hover:bg-red-50 p-1.5 rounded-lg transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if (iIdx > 0) {
+                                const newItems = [...cat.items];
+                                [newItems[iIdx - 1], newItems[iIdx]] = [newItems[iIdx], newItems[iIdx - 1]];
+                                handleUpdateCategory(cIdx, { ...cat, items: newItems });
+                              }
+                            }}
+                            disabled={iIdx === 0}
+                            className="text-slate-400 hover:text-blue-500 hover:bg-blue-50 p-1.5 rounded-lg transition-all disabled:opacity-30 disabled:hover:text-slate-400 disabled:hover:bg-transparent"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              if (iIdx < cat.items.length - 1) {
+                                const newItems = [...cat.items];
+                                [newItems[iIdx + 1], newItems[iIdx]] = [newItems[iIdx], newItems[iIdx + 1]];
+                                handleUpdateCategory(cIdx, { ...cat, items: newItems });
+                              }
+                            }}
+                            disabled={iIdx === cat.items.length - 1}
+                            className="text-slate-400 hover:text-blue-500 hover:bg-blue-50 p-1.5 rounded-lg transition-all disabled:opacity-30 disabled:hover:text-slate-400 disabled:hover:bg-transparent"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const newItems = cat.items.filter((_: any, i: number) => i !== iIdx);
+                              handleUpdateCategory(cIdx, { ...cat, items: newItems });
+                            }}
+                            className="text-slate-400 hover:text-red-550 hover:bg-red-50 p-1.5 rounded-lg transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -297,6 +394,7 @@ function CategoryEditor({
                   <div className="mt-2 space-y-2">
                     <textarea
                       value={bulkText}
+                      onKeyDown={handleKeyDown}
                       onChange={(e) => setBulkText(e.target.value)}
                       className="w-full p-2 text-xs border rounded h-32"
                       placeholder="១. សំណួរ?&#10;ក. ចម្លើយ១&#10;ខ. ចម្លើយ២ (ចម្លើយត្រឹមត្រូវ)"
@@ -318,6 +416,7 @@ function CategoryEditor({
                   updateParent={(newSubs) => handleUpdateCategory(cIdx, { ...cat, subCategories: newSubs })}
                   type={type}
                   depth={depth + 1}
+                  parentPath={[...parentPath, cat.category]}
                   onSendTelegram={onSendTelegram}
                 />
               )}
@@ -344,66 +443,141 @@ export default function AdminPage() {
   const [urlError, setUrlError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'MINISTRIES' | 'USERS'>('MINISTRIES');
+  const [activeTab, setActiveTab] = useState<'INSTITUTION' | 'SUBJECT' | 'USERS'>('INSTITUTION');
   const [usersInfo, setUsersInfo] = useState<any[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
 
   useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    
     if (activeTab === 'USERS') {
-      const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUsersInfo(JSON.parse(usersStr));
+      if (!user || userRole !== 'ADMIN') return; // Do not fetch if not authenticated as admin
+      const setupListener = async () => {
+        try {
+          
+          let regularUsers: any[] = [];
+          let customUsers: any[] = [];
+          
+          const updateCombined = () => {
+             const combined = [...customUsers, ...regularUsers];
+             combined.sort((a, b) => {
+               const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+               const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+               return timeB - timeA;
+             });
+             setUsersInfo(combined);
+          };
+
+          const { auth } = await import('@/lib/firebase');
+          const unsubCustom = onSnapshot(collection(db, 'custom_users'), (querySnapshot) => {
+            customUsers = [];
+            querySnapshot.forEach((doc) => {
+              customUsers.push({ uid: doc.id, username: doc.data().username || doc.id, source: 'custom', ...doc.data() });
+            });
+            updateCombined();
+          }, (error) => {
+            console.error("Error fetching custom users:", error);
+          });
+          
+          let unsubStandard: (() => void) | null = null;
+          if (auth.currentUser) {
+            unsubStandard = onSnapshot(collection(db, 'users'), (querySnapshot) => {
+              regularUsers = [];
+              querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                regularUsers.push({ uid: doc.id, username: data.email || data.name || doc.id, source: 'standard', ...data });
+              });
+              updateCombined();
+            }, (error) => {
+              console.error("Error fetching standard users:", error);
+            });
+          }
+          
+          unsubscribe = () => {
+             unsubCustom();
+             if (unsubStandard) unsubStandard();
+          };
+          
+        } catch (error) {
+          console.error("Error setting up users listener:", error);
+        }
+      };
+      setupListener();
     }
-  }, [activeTab]);
-
-  const handleGrantPremium = (username: string) => {
-    setUserActionDialog({ type: 'GRANT_PREMIUM', username });
-  };
-
-  const handleRevokePremium = (username: string) => {
-    setUserActionDialog({ type: 'REVOKE_PREMIUM', username });
-  };
-
-  const handleDeleteUser = (username: string) => {
-    setUserActionDialog({ type: 'DELETE_USER', username });
-  };
-
-  const handleResetPassword = (username: string) => {
-    setNewPasswordValue("");
-    setUserActionDialog({ type: 'RESET_PASSWORD', username });
-  };
-
-  const confirmUserAction = () => {
-    if (!userActionDialog) return;
-    const { type, username } = userActionDialog;
-    const usersStr = localStorage.getItem('vignasa_custom_users') || '[]';
-    let users = JSON.parse(usersStr);
-    const idx = users.findIndex((u: any) => u.username === username);
-
-    if (type === 'DELETE_USER') {
-      users = users.filter((u: any) => u.username !== username);
-      localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
-      setUsersInfo(users);
-      setUserActionDialog(null);
-    } else if (idx !== -1) {
-      if (type === 'GRANT_PREMIUM') {
-        users[idx].isPremium = true;
-        users[idx].premiumUntil = "2099-12-31T23:59:59.000Z"; 
-      } else if (type === 'REVOKE_PREMIUM') {
-        users[idx].isPremium = false;
-        users[idx].premiumUntil = null;
-      } else if (type === 'RESET_PASSWORD') {
-        if (!newPasswordValue || newPasswordValue.trim().length === 0) return;
-        users[idx].password = newPasswordValue.trim();
+    
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
       }
-      localStorage.setItem('vignasa_custom_users', JSON.stringify(users));
-      setUsersInfo(users);
-      setUserActionDialog(null);
+    };
+  }, [activeTab, user, userRole]);
+
+  const handleGrantPremium = (user: any) => {
+    setUserActionDialog({ type: 'GRANT_PREMIUM', username: user.username, uid: user.uid, source: user.source });
+  };
+
+  const handleRevokePremium = (user: any) => {
+    setUserActionDialog({ type: 'REVOKE_PREMIUM', username: user.username, uid: user.uid, source: user.source });
+  };
+
+  const handleDeleteUser = (user: any) => {
+    setUserActionDialog({ type: 'DELETE_USER', username: user.username, uid: user.uid, source: user.source });
+  };
+
+  const handleResetPassword = (user: any) => {
+    setNewPasswordValue("");
+    setUserActionDialog({ type: 'RESET_PASSWORD', username: user.username, uid: user.uid, source: user.source });
+  };
+
+  const confirmUserAction = async () => {
+    if (!userActionDialog) return;
+    const { type, username, uid, source } = userActionDialog;
+    
+    try {
+      
+      const collectionName = source === 'custom' ? 'custom_users' : 'users';
+      const docId = source === 'custom' ? username.toLowerCase() : uid;
+      const userRef = doc(db, collectionName, docId);
+
+      if (type === 'DELETE_USER') {
+        await deleteDoc(userRef);
+        setUsersInfo(usersInfo.filter((u: any) => u.uid !== uid));
+        setUserActionDialog(null);
+      } else {
+        const updateData: any = {};
+        if (type === 'GRANT_PREMIUM') {
+          updateData.isPremium = true;
+          updateData.premiumUntil = "2099-12-31T23:59:59.000Z"; 
+        } else if (type === 'REVOKE_PREMIUM') {
+          updateData.isPremium = false;
+          updateData.premiumUntil = null;
+        } else if (type === 'RESET_PASSWORD') {
+          if (source === 'standard') {
+             alert('ពាក្យសម្ងាត់គណនីប្រភេទនេះ អាចប្តូរបានតែដោយម្ចាស់គណនីតាមរយៈមុខងារភ្លេចលេខសម្ងាត់នៅលើទំព័រចូលប្រើប្រាស់ប៉ុណ្ណោះ។');
+             setUserActionDialog(null);
+             return;
+          }
+          if (!newPasswordValue || newPasswordValue.trim().length === 0) return;
+          updateData.password = newPasswordValue.trim();
+        }
+        
+        await updateDoc(userRef, updateData);
+        
+        setUsersInfo(usersInfo.map((u: any) => {
+          if (u.uid === uid) {
+            return { ...u, ...updateData };
+          }
+          return u;
+        }));
+        setUserActionDialog(null);
+      }
+    } catch (e) {
+      console.error("Action error", e);
     }
   };
 
   const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
-  const [userActionDialog, setUserActionDialog] = useState<{type: 'GRANT_PREMIUM' | 'REVOKE_PREMIUM' | 'DELETE_USER' | 'RESET_PASSWORD', username: string} | null>(null);
+  const [userActionDialog, setUserActionDialog] = useState<{type: 'GRANT_PREMIUM' | 'REVOKE_PREMIUM' | 'DELETE_USER' | 'RESET_PASSWORD', username: string, uid: string, source: 'custom' | 'standard'} | null>(null);
   const [newPasswordValue, setNewPasswordValue] = useState("");
   const [resetConfirm, setResetConfirm] = useState(false);
   const [collapsedMcqs, setCollapsedMcqs] = useState<Record<number, boolean>>({});
@@ -420,6 +594,7 @@ export default function AdminPage() {
   const [sendingQuiz, setSendingQuiz] = useState<any | null>(null);
   const [sendingQuizType, setSendingQuizType] = useState<'mcq' | 'qa' | null>(null);
   const [sendingElementId, setSendingElementId] = useState<string | null>(null);
+  const [sendingCategoryName, setSendingCategoryName] = useState<string>('');
   const [telegramChatId, setTelegramChatId] = useState("");
   const [telegramFormat, setTelegramFormat] = useState<'POLL' | 'TEXT' | 'IMAGE'>('TEXT');
   const [isSendingTelegram, setIsSendingTelegram] = useState(false);
@@ -455,23 +630,35 @@ export default function AdminPage() {
         return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       };
 
-      if (telegramFormat === 'TEXT') {
-        let text = `<b>សំណួរ៖</b> ${escapeHTML(sendingQuiz.question || '')}\n\n`;
-        if (sendingQuizType === 'mcq' && sendingQuiz.options && Array.isArray(sendingQuiz.options)) {
-          sendingQuiz.options.forEach((opt: string, idx: number) => {
-            if (opt) {
-              const label = ["A", "B", "C", "D"][idx] || String.fromCharCode(65 + idx);
-              text += `<b>${label}.</b> ${escapeHTML(opt)}\n`;
-            }
-          });
-          const correctLabel = ["A", "B", "C", "D"][sendingQuiz.correctIndex] || "A";
-          text += `\n<b>ចម្លើយត្រឹមត្រូវ៖</b> ${correctLabel}`;
-        } else {
-          text += `<b>ចម្លើយ៖</b> ${escapeHTML(sendingQuiz.answer || '')}`;
-        }
-        if (sendingQuiz.explanation) {
-          text += `\n\n<b>ការពន្យល់៖</b> ${escapeHTML(sendingQuiz.explanation)}`;
-        }
+        const categoryFooter = `${editForm?.khmerName || editForm?.name || 'ទូទៅ'}${sendingCategoryName ? `_${sendingCategoryName.replace(/[\s>]+/g, '_')}` : ''}`;
+        
+        if (telegramFormat === 'TEXT') {
+          let text = `<b>សំណួរ៖</b> ${escapeHTML(sendingQuiz.question || '')}\n\n`;
+          if (sendingQuizType === 'mcq' && sendingQuiz.options && Array.isArray(sendingQuiz.options)) {
+            sendingQuiz.options.forEach((opt: string, idx: number) => {
+              if (opt) {
+                const label = ["A", "B", "C", "D"][idx] || String.fromCharCode(65 + idx);
+                text += `<b>${label}.</b> ${escapeHTML(opt)}\n`;
+              }
+            });
+            const correctLabel = ["A", "B", "C", "D"][sendingQuiz.correctIndex] || "A";
+            text += `\n<b>ចម្លើយត្រឹមត្រូវ៖</b> ${correctLabel}`;
+          } else {
+            text += `<b>ចម្លើយ៖</b> ${escapeHTML(sendingQuiz.answer || '')}`;
+          }
+          
+          let formattedExplanation = "ពន្យល់ ៖ គ្មាន";
+          if (sendingQuiz.explanation) {
+             const trimmedExp = sendingQuiz.explanation.trim();
+             if (/^(ពន្យល់|យោង|ឯកសារយោង)/.test(trimmedExp)) {
+                formattedExplanation = trimmedExp;
+             } else {
+                formattedExplanation = `ពន្យល់ ៖ ${trimmedExp}`;
+             }
+          }
+
+          text += `\n\n@qiuzs_bot | វិញ្ញាសា | ${categoryFooter}`;
+          text += `\n\n<b>${escapeHTML(formattedExplanation)}</b>`;
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -512,9 +699,24 @@ export default function AdminPage() {
           is_anonymous: true
         };
 
+        let formattedExplanation = "ពន្យល់ ៖ គ្មាន";
         if (sendingQuiz.explanation) {
-          payload.explanation = sendingQuiz.explanation.substring(0, 200);
+           const trimmedExp = sendingQuiz.explanation.trim();
+           if (/^(ពន្យល់|យោង|ឯកសារយោង)/.test(trimmedExp)) {
+              formattedExplanation = trimmedExp;
+           } else {
+              formattedExplanation = `ពន្យល់ ៖ ${trimmedExp}`;
+           }
         }
+
+        const prefix = `@qiuzs_bot | វិញ្ញាសា | ${categoryFooter}\n\n`;
+        const suffix = "";
+        let expText = formattedExplanation;
+        const allowedLen = 200 - suffix.length - prefix.length;
+        if (expText.length > allowedLen) {
+          expText = expText.substring(0, allowedLen - 3) + "...";
+        }
+        payload.explanation = prefix + expText + suffix;
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPoll`, {
           method: 'POST',
@@ -558,6 +760,19 @@ export default function AdminPage() {
         } else {
           caption += `\n(ចម្លើយ៖ ${(sendingQuiz.answer || '').substring(0, 150)})`;
         }
+
+        let formattedExplanation = "ពន្យល់ ៖ គ្មាន";
+        if (sendingQuiz.explanation) {
+           const trimmedExp = sendingQuiz.explanation.trim();
+           if (/^(ពន្យល់|យោង|ឯកសារយោង)/.test(trimmedExp)) {
+              formattedExplanation = trimmedExp;
+           } else {
+              formattedExplanation = `ពន្យល់ ៖ ${trimmedExp}`;
+           }
+        }
+
+        caption += `\n\n@qiuzs_bot | វិញ្ញាសា | ${categoryFooter}`;
+        caption += `\n\n${formattedExplanation}`;
         formData.append("caption", caption);
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
@@ -625,7 +840,8 @@ export default function AdminPage() {
             type: 'Q_AND_A',
             category: fullPath,
             question: item.question,
-            answer: item.answer
+            answer: item.answer,
+            explanation: item.explanation || ""
           });
         });
         if (cat.subCategories) flattenQa(cat.subCategories, fullPath);
@@ -733,8 +949,9 @@ export default function AdminPage() {
     const text = bulkTextQa[cIdx] || '';
     const lines = text.split('\n').map(l => l.trimEnd());
     const newItems: any[] = [];
-    let currentItem: { question: string, answer: string } | null = null;
+    let currentItem: { question: string, answer: string, explanation?: string } | null = null;
     let isAnswering = false;
+    let isExplanation = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -746,24 +963,37 @@ export default function AdminPage() {
       
       // Check if line looks like an answer start: "ចម្លើយ ៖" or "ចម្លើយ :" or "ចម្លើយ:"
       const isAnswerStart = /^(ចម្លើយ|ចម្លើយ\s*[៖:]+)\s*/.test(line);
+      
+      // Check if line looks like an explanation start: "ការពន្យល់" or "ឯកសារយោង"
+      const isExplStart = /^(ការពន្យល់|ឯកសារយោង|ការពន្យល់\s*[៖:]+|ឯកសារយោង\s*[៖:]+)\s*/.test(line);
 
-      if ((isLikelyQuestion || (isQuestionStart && !isAnswering)) && (!currentItem || isAnswering || isLikelyQuestion)) {
+      if ((isLikelyQuestion || (isQuestionStart && !isAnswering)) && (!currentItem || isAnswering || isExplanation || isLikelyQuestion)) {
         // If we were already building an item, push it
         if (currentItem && (currentItem.question || currentItem.answer)) {
           newItems.push(currentItem);
         }
         currentItem = {
           question: line.replace(/^([០-៩0-9]+)\s*[.\-)]\s*/, '').trim(),
-          answer: ''
+          answer: '',
+          explanation: ''
         };
         isAnswering = false;
+        isExplanation = false;
       } else if (isAnswerStart && currentItem) {
         isAnswering = true;
+        isExplanation = false;
         // Strip the "ចម្លើយ ៖" prefix
         const answerText = line.replace(/^(ចម្លើយ|ចម្លើយ\s*[៖:]+)\s*/, '').trim();
         currentItem.answer = answerText;
+      } else if (isExplStart && currentItem) {
+        isExplanation = true;
+        isAnswering = false;
+        const explText = line.replace(/^(ការពន្យល់|ឯកសារយោង|ការពន្យល់\s*[៖:]+|ឯកសារយោង\s*[៖:]+)\s*/, '').trim();
+        currentItem.explanation = explText;
       } else if (currentItem) {
-        if (isAnswering) {
+        if (isExplanation) {
+          currentItem.explanation += (currentItem.explanation ? '\n' : '') + line;
+        } else if (isAnswering) {
           // Append to answer with newline preserved
           currentItem.answer += (currentItem.answer ? '\n' : '') + line;
         } else {
@@ -772,8 +1002,9 @@ export default function AdminPage() {
         }
       } else {
         // First line case if it doesn't match markers
-        currentItem = { question: line, answer: '' };
+        currentItem = { question: line, answer: '', explanation: '' };
         isAnswering = false;
+        isExplanation = false;
       }
     }
 
@@ -829,11 +1060,13 @@ export default function AdminPage() {
     const newId = 'ministry_' + Date.now();
     const newMinistry: Ministry = {
       id: newId,
-      name: "New Ministry",
-      khmerName: "ក្រសួងថ្មី",
+      name: activeTab === 'SUBJECT' ? "New Subject" : "New Ministry",
+      khmerName: activeTab === 'SUBJECT' ? "វិញ្ញាសាថ្មី" : "ក្រសួងថ្មី",
       description: "Description",
       logo: "https://picsum.photos/seed/ministry/200/200",
       color: "#0f172a",
+      groupType: activeTab === 'SUBJECT' ? 'SUBJECT' : 'INSTITUTION',
+      subjectType: 'MCQ',
       mcqs: [],
       shortAnswers: [],
       terms: []
@@ -950,7 +1183,8 @@ export default function AdminPage() {
   const handleDragEnd = async (result: DropResult) => {
     if (!result.destination || result.source.index === result.destination.index) return;
 
-    const items = Array.from(ministries);
+    const filteredList = ministries.filter(m => (m.groupType || 'INSTITUTION') === activeTab);
+    const items = Array.from(filteredList);
     const [reorderedItem] = items.splice(result.source.index, 1);
     items.splice(result.destination.index, 0, reorderedItem);
 
@@ -960,7 +1194,7 @@ export default function AdminPage() {
       await firestoreService.updateMinistryOrders(updates);
     } catch (e) {
       console.error("Failed to update orders", e);
-      setUrlError("Failed to reorder ministries.");
+      setUrlError("Failed to reorder items.");
     }
   };
 
@@ -1011,13 +1245,13 @@ export default function AdminPage() {
             <h1 className="text-3xl font-bold text-slate-900">Admin Dashboard</h1>
             <p className="text-slate-500">Manage ministry information, quizzes, and terms</p>
           </div>
-          {activeTab === 'MINISTRIES' && (
+          {(activeTab === 'INSTITUTION' || activeTab === 'SUBJECT') && (
             <div className="flex items-center gap-3">
               <button 
                 onClick={handleAddMinistry}
                 className="px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all flex items-center gap-2 shadow-lg shadow-blue-600/20"
               >
-                <Plus className="w-4 h-4" /> Add Ministry
+                <Plus className="w-4 h-4" /> {activeTab === 'INSTITUTION' ? 'Add Ministry' : 'Add Subject'}
               </button>
               <button 
                 onClick={resetToInitial}
@@ -1031,12 +1265,20 @@ export default function AdminPage() {
 
         <div className="flex gap-8 mb-8 border-b border-slate-200">
           <button 
-            onClick={() => setActiveTab('MINISTRIES')}
+            onClick={() => setActiveTab('INSTITUTION')}
             className={`pb-4 text-sm font-bold transition-colors flex items-center gap-2 ${
-              activeTab === 'MINISTRIES' ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"
+              activeTab === 'INSTITUTION' ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"
             }`}
           >
-            <BookOpen className="w-4 h-4" /> គ្រប់គ្រងក្រសួង
+            <Building2 className="w-4 h-4" /> គ្រប់គ្រងក្រសួង
+          </button>
+          <button 
+            onClick={() => setActiveTab('SUBJECT')}
+            className={`pb-4 text-sm font-bold transition-colors flex items-center gap-2 ${
+              activeTab === 'SUBJECT' ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            <BookOpen className="w-4 h-4" /> គ្រប់គ្រងវិញ្ញាសា
           </button>
           <button 
             onClick={() => setActiveTab('USERS')}
@@ -1084,18 +1326,19 @@ export default function AdminPage() {
            </div>
         )}
 
-        {activeTab === 'MINISTRIES' ? (
-          <DragDropContext onDragEnd={handleDragEnd}>
-          <Droppable droppableId="ministriesList">
-            {(provided) => (
-              <div 
-                className="grid gap-6 pb-20"
-                {...provided.droppableProps}
-                ref={provided.innerRef}
-              >
-                {(editingId && editForm && !ministries.find(m => m.id === editingId) 
-                   ? [editForm, ...ministries] 
-                   : ministries).map((ministry, index) => (
+        {(activeTab === 'INSTITUTION' || activeTab === 'SUBJECT') ? (
+          <div>
+            <DragDropContext onDragEnd={handleDragEnd}>
+            <Droppable droppableId="ministriesList">
+              {(provided) => (
+                <div 
+                  className="grid gap-6 pb-20"
+                  {...provided.droppableProps}
+                  ref={provided.innerRef}
+                >
+                  {(editingId && editForm && !ministries.find(m => m.id === editingId) 
+                     ? [editForm, ...ministries] 
+                     : ministries).filter(m => (m.groupType || 'INSTITUTION') === activeTab).map((ministry, index) => (
                   <Draggable key={ministry.id} draggableId={ministry.id} index={index} isDragDisabled={!!editingId}>
                     {(provided, snapshot) => (
                       <div
@@ -1162,6 +1405,17 @@ export default function AdminPage() {
                                         />
                                       </div>
                                       <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">ចំណាត់ថ្នាក់ (Group Type)</label>
+                                        <select
+                                          value={editForm.groupType || 'INSTITUTION'}
+                                          onChange={(e) => updateField('groupType', e.target.value)}
+                                          className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-khmer text-sm"
+                                        >
+                                          <option value="INSTITUTION">ក្រសួង ស្ថាប័ន (Institution)</option>
+                                          <option value="SUBJECT">វិញ្ញាសា (Subject)</option>
+                                        </select>
+                                      </div>
+                                      <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Logo URL</label>
                                         <input 
                                           type="text" 
@@ -1195,7 +1449,7 @@ export default function AdminPage() {
                                     rows={6}
                                     value={editForm.details || editForm.description}
                                     onChange={(e) => updateField('details', e.target.value)}
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none transition-all resize-none"
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
                                   />
                                 </section>
                                 {/* Terminology Section */}
@@ -1258,10 +1512,11 @@ export default function AdminPage() {
                                     categories={editForm.mcqs || []}
                                     updateParent={(newMcqs) => updateField('mcqs', newMcqs)}
                                     type="mcq"
-                                    onSendTelegram={(item, type, elementId) => {
+                                    onSendTelegram={(item, type, elementId, categoryName) => {
                                       setSendingQuiz(item);
                                       setSendingQuizType(type);
                                       setSendingElementId(elementId);
+                                      setSendingCategoryName(categoryName);
                                       setTelegramFormat('POLL');
                                     }}
                                   />
@@ -1284,10 +1539,11 @@ export default function AdminPage() {
                                     categories={editForm.shortAnswers || []}
                                     updateParent={(newQa) => updateField('shortAnswers', newQa)}
                                     type="qa"
-                                    onSendTelegram={(item, type, elementId) => {
+                                    onSendTelegram={(item, type, elementId, categoryName) => {
                                       setSendingQuiz(item);
                                       setSendingQuizType(type);
                                       setSendingElementId(elementId);
+                                      setSendingCategoryName(categoryName);
                                       setTelegramFormat('TEXT');
                                     }}
                                   />
@@ -1304,7 +1560,15 @@ export default function AdminPage() {
                                 <SafeImage src={ministry.logo} alt="" fill className="object-contain p-2" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <h3 className="font-bold text-slate-800 text-lg truncate">{ministry.khmerName}</h3>
+                                <h3 className="font-bold text-slate-800 text-lg truncate flex items-center gap-2">
+                                  {ministry.khmerName}
+                                  {ministry.groupType === 'SUBJECT' && (
+                                    <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">វិញ្ញាសា</span>
+                                  )}
+                                  {ministry.groupType !== 'SUBJECT' && (
+                                    <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">ក្រសួង</span>
+                                  )}
+                                </h3>
                                 <p className="text-sm text-slate-500 truncate">{ministry.name}</p>
                               </div>
                               <div className="flex items-center gap-2">
@@ -1333,7 +1597,8 @@ export default function AdminPage() {
               </div>
             )}
           </Droppable>
-        </DragDropContext>
+          </DragDropContext>
+          </div>
         ) : (
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -1366,7 +1631,7 @@ export default function AdminPage() {
                   {usersInfo
                     .filter(u => u.username?.toLowerCase().includes(userSearchTerm.toLowerCase()))
                     .map((u: any, idx: number) => (
-                    <tr key={u.username || idx} className="hover:bg-slate-50/50 transition-colors">
+                    <tr key={u.uid || idx} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4 border-b border-slate-100 text-sm text-slate-500 text-center font-medium">{idx + 1}</td>
                       <td className="px-6 py-4 border-b border-slate-100">
                         <div className="flex items-center gap-3">
@@ -1374,7 +1639,11 @@ export default function AdminPage() {
                             <Users className="w-5 h-5" />
                           </div>
                           <div>
-                            <p className="font-bold text-slate-900">{u.username}</p>
+                            <p className="font-bold text-slate-900">
+                              {u.username}
+                              {u.source === 'standard' && <span className="ml-2 inline-flex items-center bg-blue-100 text-blue-700 font-medium px-2 py-0.5 rounded-md text-[10px] tracking-widest">Google Auth</span>}
+                              {u.source === 'custom' && <span className="ml-2 inline-flex items-center bg-purple-100 text-purple-700 font-medium px-2 py-0.5 rounded-md text-[10px] tracking-widest">App Auth</span>}
+                            </p>
                             {u.role === 'ADMIN' && (
                               <span className="inline-flex items-center gap-1 text-[10px] uppercase font-bold text-red-600 tracking-widest mt-1 bg-red-50 px-2 py-0.5 rounded-md">
                                 <Shield className="w-3 h-3" /> Admin
@@ -1395,35 +1664,35 @@ export default function AdminPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 border-b border-slate-100 text-sm text-slate-600">
-                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}
+                        {u.createdAt ? (u.createdAt.toDate ? u.createdAt.toDate().toLocaleDateString() : new Date(u.createdAt).toLocaleDateString()) : '-'}
                       </td>
                       <td className="px-6 py-4 border-b border-slate-100 text-right">
                         {u.role !== 'ADMIN' && (
                           <div className="flex justify-end gap-2 items-center">
                             {u.isPremium ? (
                               <button 
-                                onClick={() => handleRevokePremium(u.username)}
+                                onClick={() => handleRevokePremium(u)}
                                 className="h-9 px-4 text-xs font-bold uppercase tracking-widest rounded-xl border border-red-200 text-red-600 hover:bg-red-50 transition-all flex items-center gap-2"
                               >
                                 លុប Premium
                               </button>
                             ) : (
                               <button 
-                                onClick={() => handleGrantPremium(u.username)}
+                                onClick={() => handleGrantPremium(u)}
                                 className="h-9 px-4 text-xs font-bold uppercase tracking-widest rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all flex items-center gap-2 shadow-md shadow-blue-600/20"
                               >
                                 <Crown className="w-4 h-4" /> ផ្ដល់ Premium
                               </button>
                             )}
                             <button
-                              onClick={() => handleResetPassword(u.username)}
+                              onClick={() => handleResetPassword(u)}
                               className="h-9 w-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl border border-slate-200 hover:border-blue-200 transition-all"
                               title="ប្តូរពាក្យសម្ងាត់"
                             >
                               <Key className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => handleDeleteUser(u.username)}
+                              onClick={() => handleDeleteUser(u)}
                               className="h-9 w-9 flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl border border-slate-200 hover:border-red-200 transition-all"
                               title="លុបគណនីសមាជិក"
                             >

@@ -37,6 +37,7 @@ export interface McqItem {
 export interface QaItem {
   question: string;
   answer: string;
+  explanation?: string;
 }
 
 export interface QuizCategory {
@@ -60,6 +61,8 @@ export interface Ministry {
   logo: string;
   color: string;
   order?: number;
+  groupType?: 'SUBJECT' | 'INSTITUTION';
+  subjectType?: 'MCQ' | 'QA';
   quizzes?: Quiz[];
   mcqs?: QuizCategory[];
   shortAnswers?: ShortAnswerCategory[];

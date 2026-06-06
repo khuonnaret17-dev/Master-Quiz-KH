@@ -52,10 +52,10 @@ export const MinistryList: React.FC<MinistryListProps> = ({ ministries, onSelect
                           className="object-contain p-2 sm:p-4 group-hover:scale-105 transition-transform duration-500"
                           style={{
                             backgroundColor: '#ffffff',
-                            borderStyle: 'double',
+                            borderStyle: 'solid',
                             borderWidth: '5px',
                             borderColor: '#0f0fef',
-                            borderRadius: '21px'
+                            borderRadius: '36px'
                           }}
                         />
                       ) : (

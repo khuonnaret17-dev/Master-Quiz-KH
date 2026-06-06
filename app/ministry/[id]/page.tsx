@@ -262,14 +262,9 @@ function MinistryDetailContent() {
                       ដើម្បីអាចធ្វើតេស្តវិញ្ញាសា (ពហុចម្លើយ, សំណួរចម្លើយ និងវាក្យសព្ទ) សូមអាប់ដេតគណនីរបស់អ្នកទៅជាគម្រោង Premium ឬ VIP។
                     </p>
                   </div>
-                  <div className="mt-8">
-                    <Link
-                      href="/premium"
-                      className="inline-flex items-center gap-2 px-8 py-3 bg-[#D4AF37] hover:bg-[#b0912d] text-white rounded-xl font-bold font-khmer transition-all shadow-lg hover:shadow-xl hover:-translate-y-1"
-                    >
-                      <Crown className="w-5 h-5" />
-                      ស្វែងយល់ពីគម្រោង Premium
-                    </Link>
+                  <div className="mt-8 text-center p-4 bg-amber-50 rounded-xl border border-amber-100">
+                    <p className="text-sm font-bold text-amber-800 font-khmer">កំណាត់សម្គាល់</p>
+                    <p className="text-sm text-amber-700 font-khmer mt-2">គម្រោង Premium ត្រូវបានផ្ដល់ជូនដោយអ្នកគ្រប់គ្រងផ្ទាល់។ សូមទាក់ទងអ្នកគ្រប់គ្រងដើម្បីទទួលបានសិទ្ធិប្រើប្រាស់។</p>
                   </div>
                 </motion.div>
               ) : selectedCategory && activeTab !== 'DOCUMENTS' ? (
@@ -298,7 +293,7 @@ function MinistryDetailContent() {
                   exit={{ opacity: 0, y: -20 }}
                   className="space-y-6"
                 >
-                  <WebDocumentView ministry={ministry} />
+                  <WebDocumentView ministry={ministry} documents={documents} />
                 </motion.div>
               ) : activeTab === 'INFO' ? (
                 <motion.div
@@ -314,7 +309,7 @@ function MinistryDetailContent() {
                         <BookOpen className="w-5 h-5 text-blue-600" />
                         Description (អំពីក្រសួង)
                       </h2>
-                      <div className="prose prose-slate max-w-none text-slate-600 leading-relaxed bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm">
+                      <div className="prose prose-slate max-w-none text-slate-600 leading-relaxed bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-sm whitespace-pre-wrap">
                         {ministry.details || ministry.description}
                       </div>
                     </section>

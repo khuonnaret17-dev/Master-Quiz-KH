@@ -128,14 +128,9 @@ export default function QuizPage() {
 
             <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col gap-4">
               {isLoggedIn ? (
-                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center gap-3">
-                  <p className="text-xs text-slate-500 font-bold">ទៅកាន់ទំព័រជាវគម្រោង Premium</p>
-                  <Link
-                    href="/subscription"
-                    className="px-6 py-2.5 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 transition-colors"
-                  >
-                    ប្ដូរទៅជា Premium
-                  </Link>
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center gap-3 text-center">
+                  <p className="text-xs text-slate-500 font-bold">កំណត់សម្គាល់</p>
+                  <p className="text-sm text-slate-600 font-khmer">គម្រោង Premium ត្រូវបានផ្ដល់ជូនដោយអ្នកគ្រប់គ្រងផ្ទាល់។ សូមទាក់ទងអ្នកគ្រប់គ្រងដើម្បីទទួលបានសិទ្ធិប្រើប្រាស់។</p>
                 </div>
               ) : (
                 <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center gap-3">
