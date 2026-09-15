@@ -1,13 +1,13 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
+
 
 import { useParams, useSearchParams } from 'next/navigation';
 import { useFirebase } from '@/lib/FirebaseProvider';
-import { Ministry, QuizType, PdfDocument } from '@/lib/types';
+import { QuizType, PdfDocument } from '@/lib/types';
 import { firestoreService } from '@/lib/firestore-service';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Globe, MapPin, Phone, ExternalLink, BookOpen, HelpCircle, MessageSquare, ChevronRight, CheckCircle2, ChevronLeft, Award, FileText, Crown, Download, Lock } from 'lucide-react';
+import { ArrowLeft, Globe, BookOpen, HelpCircle, MessageSquare, ChevronRight, CheckCircle2, ChevronLeft, FileText, Crown, Download, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useMemo, useEffect, Suspense } from 'react';
 import { QuizView } from '@/components/QuizView';
@@ -15,14 +15,56 @@ import { WebDocumentView } from '@/components/WebDocumentView';
 import SafeImage from '@/components/SafeImage';
 
 function MinistryDetailContent() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const searchParams = useSearchParams();
-  const initialTab = (searchParams?.get('tab') as any) || 'INFO';
-  const { ministries, loading, authLoading, user, userRole, saveProgress, isPremium } = useFirebase();
+  const rawTab = searchParams?.get('tab');
+  const initialTab = (['INFO', 'MCQ', 'QA', 'VOCABULARY', 'DOCUMENTS'].includes(rawTab || '') ? rawTab : 'INFO') as 'INFO' | 'MCQ' | 'QA' | 'VOCABULARY' | 'DOCUMENTS';
+  const { ministries, loading, authLoading, user, saveProgress, isPremium, userRole } = useFirebase();
   const [activeTab, setActiveTab] = useState<'INFO' | 'MCQ' | 'QA' | 'VOCABULARY' | 'DOCUMENTS'>(initialTab);
   const [navigationPath, setNavigationPath] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [documents, setDocuments] = useState<PdfDocument[]>([]);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfCategory, setPdfCategory] = useState<string | null>(null);
+
+  const handleDownloadPdf = async (categoryPath: string | null = null) => {
+    if (!ministry) return;
+    setIsDownloadingPdf(true);
+    setPdfCategory(categoryPath);
+    
+    setTimeout(async () => {
+      try {
+        const element = document.getElementById('pdf-print-template');
+        if (!element) throw new Error("Template not found");
+        
+        const { toJpeg } = await import('html-to-image');
+        const { jsPDF } = await import('jspdf');
+
+        const imgData = await toJpeg(element, {
+          quality: 0.95,
+          pixelRatio: 2,
+          backgroundColor: '#ffffff'
+        });
+        
+        const pdf = new jsPDF({
+          orientation: 'p',
+          unit: 'px',
+          format: [element.offsetWidth, element.offsetHeight]
+        });
+        
+        pdf.addImage(imgData, 'JPEG', 0, 0, element.offsetWidth, element.offsetHeight);
+        const suffix = categoryPath ? `_${categoryPath.replace(/\s+/g, '_').replace(/\//g, '-')}` : '';
+        pdf.save(`Vignasa_${ministry.khmerName.replace(/\s+/g, '_')}${suffix}.pdf`);
+      } catch (err) {
+        console.error(err);
+        alert("បរាជ័យក្នុងការទាញយក PDF។");
+      } finally {
+        setIsDownloadingPdf(false);
+        setPdfCategory(null);
+      }
+    }, 200); // give react time to re-render the template
+  };
 
   const ministry = ministries.find(m => m.id === id);
 
@@ -44,7 +86,12 @@ function MinistryDetailContent() {
       )
     );
     
-    const tree: any = {};
+    interface CategoryNode {
+      isLeaf: boolean;
+      fullPath: string | null;
+      children: Record<string, CategoryNode>;
+    }
+    const tree: Record<string, CategoryNode> = {};
     uniqueCategories.forEach(cat => {
       const parts = cat.split(' > ');
       let current = tree;
@@ -124,6 +171,10 @@ function MinistryDetailContent() {
   const currentType: QuizType = activeTab === 'MCQ' ? 'MULTIPLE_CHOICE' : activeTab === 'QA' ? 'Q_AND_A' : 'VOCABULARY';
 
   const isBlocked = !user;
+  
+  const pdfQuizzes = ministry.quizzes ? (pdfCategory 
+    ? ministry.quizzes.filter(q => q.category && (q.category === pdfCategory || q.category.startsWith(pdfCategory + '/')))
+    : ministry.quizzes) : [];
 
   return (
     <div className="min-h-screen bg-transparent">
@@ -151,16 +202,35 @@ function MinistryDetailContent() {
             <div className="w-24 h-24 md:w-32 md:h-32 bg-white rounded-3xl p-3 shadow-2xl flex-shrink-0 relative overflow-hidden">
               <SafeImage src={ministry.logo} alt={ministry.name} fill className="object-contain p-2" />
             </div>
-            <div className="flex-1 text-center md:text-left">
-              <span className="inline-block px-3 py-1 bg-white/10 text-white/80 rounded-full text-xs font-mono mb-2 backdrop-blur-sm border border-white/5">
-                {ministry.id.toUpperCase()}
-              </span>
-              <h1 className="text-2xl md:text-4xl font-bold text-white mb-1 leading-tight">
-                {ministry.khmerName}
-              </h1>
-              <p className="text-white/70 text-sm md:text-base font-medium">
-                {ministry.name}
-              </p>
+            <div className="flex-1 text-center md:text-left flex flex-col md:flex-row md:items-end justify-between gap-4">
+              <div>
+                <span className="inline-block px-3 py-1 bg-white/10 text-white/80 rounded-full text-xs font-mono mb-2 backdrop-blur-sm border border-white/5">
+                  {ministry.id.toUpperCase()}
+                </span>
+                <h1 className="text-2xl md:text-4xl font-bold text-white mb-1 leading-tight">
+                  {ministry.khmerName}
+                </h1>
+                <p className="text-white/70 text-sm md:text-base font-medium">
+                  {ministry.name}
+                </p>
+              </div>
+              
+              {userRole === 'ADMIN' && (
+                <button
+                  onClick={() => handleDownloadPdf(null)}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex items-center justify-center px-4 py-2 bg-blue-600/80 hover:bg-blue-600 text-white text-sm font-bold rounded-xl backdrop-blur-md border border-blue-500/30 transition-all shadow-lg hover:shadow-blue-500/20 disabled:opacity-50"
+                >
+                  {isDownloadingPdf ? (
+                    <span className="animate-pulse">កំពុងទាញយក...</span>
+                  ) : (
+                    <>
+                      <Download className="w-4 h-4 mr-2" />
+                      ទាញយកជា PDF
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </motion.div>
         </div>
@@ -212,17 +282,19 @@ function MinistryDetailContent() {
           <div className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
             <div className="max-w-5xl mx-auto px-6">
               <div className="flex gap-8 overflow-x-auto no-scrollbar">
-                {[
-                  { id: 'INFO', label: 'ព័ត៌មានទូទៅ', icon: BookOpen },
-                  { id: 'MCQ', label: 'ផ្នែកសំណួរពហុចម្លើយ', icon: HelpCircle },
-                  { id: 'QA', label: 'ផ្នែកសំណួរចម្លើយ', icon: MessageSquare },
-                  { id: 'VOCABULARY', label: 'ផ្នែកពន្យល់ពាក្យ', icon: Globe },
-                  { id: 'DOCUMENTS', label: 'ឯកសារ (Web Document)', icon: FileText }
-                ].map((tab) => (
+                {(
+                  [
+                    { id: 'INFO', label: 'ព័ត៌មានទូទៅ', icon: BookOpen },
+                    { id: 'MCQ', label: 'ផ្នែកសំណួរពហុចម្លើយ', icon: HelpCircle },
+                    { id: 'QA', label: 'ផ្នែកសំណួរចម្លើយ', icon: MessageSquare },
+                    { id: 'VOCABULARY', label: 'ផ្នែកពន្យល់ពាក្យ', icon: Globe },
+                    { id: 'DOCUMENTS', label: 'ឯកសារ (Web Document)', icon: FileText }
+                  ] as const
+                ).map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => {
-                      setActiveTab(tab.id as any);
+                      setActiveTab(tab.id);
                       setSelectedCategory(null);
                       setNavigationPath([]);
                     }}
@@ -340,27 +412,48 @@ function MinistryDetailContent() {
                         const node = currentNode.children[part];
                         
                         return (
-                          <button
-                            key={part}
-                            onClick={() => {
-                                if (node.isLeaf) {
-                                    setSelectedCategory(node.fullPath);
-                                } else {
-                                    setNavigationPath([...navigationPath, part]);
-                                }
-                            }}
-                            className={`group bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-blue-100 transition-all text-left flex items-center gap-4 w-full`}
-                          >
-                            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                              <CheckCircle2 className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                                <h3 className="text-lg font-bold text-slate-900 font-serif group-hover:text-blue-600 transition-colors">
-                                {part}
-                                </h3>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-blue-400 group-hover:translate-x-1 transition-transform" />
-                          </button>
+                          <div key={part} className="group bg-white p-4 md:p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-blue-100 transition-all flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full">
+                            <button
+                              onClick={() => {
+                                  if (node.isLeaf) {
+                                      setSelectedCategory(node.fullPath);
+                                  } else {
+                                      setNavigationPath([...navigationPath, part]);
+                                  }
+                              }}
+                              className="flex-1 text-left flex items-center gap-4 w-full"
+                            >
+                              <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                                <CheckCircle2 className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1">
+                                  <h3 className="text-lg font-bold text-slate-900 font-serif group-hover:text-blue-600 transition-colors">
+                                  {part}
+                                  </h3>
+                              </div>
+                              <ChevronRight className="w-4 h-4 text-blue-400 group-hover:translate-x-1 transition-transform" />
+                            </button>
+                            
+                            {userRole === 'ADMIN' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadPdf(node.fullPath);
+                                }}
+                                disabled={isDownloadingPdf}
+                                className="inline-flex items-center justify-center px-4 py-2 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold rounded-xl transition-colors disabled:opacity-50 border border-slate-200 hover:border-blue-200 w-full sm:w-auto mt-2 sm:mt-0"
+                              >
+                                {isDownloadingPdf && pdfCategory === node.fullPath ? (
+                                  <span className="animate-pulse">...</span>
+                                ) : (
+                                  <>
+                                    <Download className="w-4 h-4 mr-2" />
+                                    PDF
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -419,7 +512,7 @@ function MinistryDetailContent() {
 
             {/* Quizzes Wrapper */}
             <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
-              {ministry.quizzes.map((quiz, idx) => (
+              {pdfQuizzes.map((quiz, idx) => (
                 <div key={idx} style={{ padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", backgroundColor: "#f8fafc", marginBottom: "24px", display: "block" }}>
                   {/* Question header */}
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid #f1f5f9", paddingBottom: "8px", marginBottom: "16px" }}>

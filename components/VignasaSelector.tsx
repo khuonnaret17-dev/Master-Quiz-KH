@@ -13,7 +13,6 @@ interface VignasaSelectorProps {
   ministry: Ministry;
   onSelect: (category: string, type: QuizType) => void;
   onBack: () => void;
-  userProgress: any;
 }
 
 const QUIZ_TYPE_LABELS: Record<QuizType, string> = {
@@ -29,10 +28,6 @@ export const VignasaSelector: React.FC<VignasaSelectorProps> = ({
 }) => {
   const [selectedType, setSelectedType] = React.useState<QuizType | null>(null);
 
-  const getAvailableTypes = () => {
-    return Array.from(new Set((ministry.quizzes || []).map(q => q.type || 'MULTIPLE_CHOICE'))) as QuizType[];
-  };
-
   const getCategoriesForType = (type: QuizType) => {
     return Array.from(
       new Set(
@@ -44,14 +39,12 @@ export const VignasaSelector: React.FC<VignasaSelectorProps> = ({
     );
   };
 
-  const getCategoryIcon = (category: string) => {
-    if (category.includes('ច្បាប់')) return <Gavel className="w-6 h-6" />;
-    if (category.includes('ចំណេះដឹងទូទៅ')) return <GraduationCap className="w-6 h-6" />;
-    if (category.includes('បច្ចេកទេស')) return <Cpu className="w-6 h-6" />;
+  const getCategoryIcon = (category?: string) => {
+    if (category?.includes('ច្បាប់')) return <Gavel className="w-6 h-6" />;
+    if (category?.includes('ចំណេះដឹងទូទៅ')) return <GraduationCap className="w-6 h-6" />;
+    if (category?.includes('បច្ចេកទេស')) return <Cpu className="w-6 h-6" />;
     return <Globe className="w-6 h-6" />;
   };
-
-  const availableTypes = getAvailableTypes();
 
   return (
     <div className="space-y-12">
@@ -116,7 +109,7 @@ export const VignasaSelector: React.FC<VignasaSelectorProps> = ({
             exit={{ opacity: 0, scale: 0.98 }}
             className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 md:gap-8"
           >
-            {(['MULTIPLE_CHOICE', 'Q_AND_A', 'VOCABULARY'] as QuizType[]).map((type, index) => {
+            {(['MULTIPLE_CHOICE', 'Q_AND_A', 'VOCABULARY'] as QuizType[]).map((type) => {
               const typeQuizzes = (ministry.quizzes || []).filter(q => (q.type || 'MULTIPLE_CHOICE') === type);
               const isAvailable = typeQuizzes.length > 0;
 
@@ -170,7 +163,7 @@ export const VignasaSelector: React.FC<VignasaSelectorProps> = ({
             exit={{ opacity: 0, y: -20 }}
             className="grid grid-cols-1 md:grid-cols-2 gap-8"
           >
-            {getCategoriesForType(selectedType).map((category, index) => {
+            {getCategoriesForType(selectedType).map((category) => {
               const categoryQuizzes = (ministry.quizzes || []).filter(q => (q.type || 'MULTIPLE_CHOICE') === selectedType && q.category === category);
               
               return (

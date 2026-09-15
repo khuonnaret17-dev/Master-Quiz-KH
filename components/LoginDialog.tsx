@@ -36,11 +36,13 @@ export default function LoginDialog() {
       }
       
       await signInWithPopup(auth, provider);
-    } catch (err: any) {
-      if (err.code === 'auth/popup-blocked') {
+    } catch (err: unknown) {
+      const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : '';
+      const message = err instanceof Error ? err.message : String(err);
+      if (code === 'auth/popup-blocked') {
         setError('សូមអនុញ្ញាត Popup នៅក្នុង Browser របស់អ្នក ដើម្បីចូលប្រើប្រាស់។');
       } else {
-        setError('មានបញ្ហាក្នុងការភ្ជាប់ទៅកាន់ Google: ' + err.message);
+        setError('មានបញ្ហាក្នុងការភ្ជាប់ទៅកាន់ Google: ' + message);
       }
       console.error(err);
       setIsLoading(false);

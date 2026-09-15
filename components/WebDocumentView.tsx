@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Ministry, QuizType, PdfDocument } from '@/lib/types';
+import React, { useState } from 'react';
+import { Ministry, Quiz, PdfDocument } from '@/lib/types';
 import { HelpCircle, MessageSquare, Globe, AlertCircle, ChevronDown, ChevronUp, FileText, Download } from 'lucide-react';
 
 interface WebDocumentViewProps {
@@ -7,7 +7,7 @@ interface WebDocumentViewProps {
   documents?: PdfDocument[];
 }
 
-export const CategorySection = ({ category, items, defaultExpanded = false }: { category: string, items: any[], defaultExpanded?: boolean }) => {
+export const CategorySection = ({ category, items, defaultExpanded = false }: { category: string, items: Quiz[], defaultExpanded?: boolean }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (
@@ -65,7 +65,7 @@ export const CategorySection = ({ category, items, defaultExpanded = false }: { 
                     <div className="bg-blue-50/70 rounded-xl p-5 border border-blue-100/50 mt-2">
                       <p className="text-slate-800 leading-relaxed font-khmer whitespace-pre-wrap">
                         <span className="font-bold text-blue-800 mr-2 block mb-1">ចម្លើយ៖</span>
-                        {item.answer.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
+                        {item.answer?.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
                           part.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/g) ? (
                             <a key={i} href={part.startsWith('www.') ? `https://${part}` : part} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline break-all relative z-10 pointer-events-auto">
                               {part}
@@ -87,7 +87,7 @@ export const CategorySection = ({ category, items, defaultExpanded = false }: { 
                       <div className="space-y-1 md:space-y-2">
                         <h3 className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">ឯកសារយោង / ពន្យល់</h3>
                         <p className="text-sm leading-relaxed text-[#1A1A1A]/80 italic font-medium whitespace-pre-wrap">
-                          {item.explanation.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
+                          {item.explanation?.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
                             part.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/g) ? (
                               <a key={i} href={part.startsWith('www.') ? `https://${part}` : part} target="_blank" rel="noopener noreferrer" className="text-[#D4AF37] hover:text-[#B3932F] underline break-all not-italic font-bold relative z-10 pointer-events-auto">
                                 {part}
@@ -135,7 +135,7 @@ export const WebDocumentView: React.FC<WebDocumentViewProps> = ({ ministry, docu
     if (!acc[typeLabel][quiz.category]) acc[typeLabel][quiz.category] = [];
     acc[typeLabel][quiz.category].push(quiz);
     return acc;
-  }, {} as Record<string, Record<string, typeof quizzes>>);
+  }, {} as Record<string, Record<string, Quiz[]>>);
 
   const typeKeys = Object.keys(grouped);
   if (documents.length > 0) {
@@ -191,7 +191,7 @@ export const WebDocumentView: React.FC<WebDocumentViewProps> = ({ ministry, docu
 
             <div className="space-y-4">
               {Object.entries(activeCategories).map(([category, items]) => (
-                <CategorySection key={category} category={category} items={items as any[]} />
+                <CategorySection key={category} category={category} items={items} />
               ))}
             </div>
           </div>

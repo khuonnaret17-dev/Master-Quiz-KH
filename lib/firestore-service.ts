@@ -10,7 +10,6 @@ import {
   getDocFromServer,
   query,
   where,
-  limit,
   writeBatch
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
@@ -106,7 +105,7 @@ export const firestoreService = {
     }
   },
 
-  subscribeMinistries(callback: (ministries: Ministry[]) => void, onError?: (error: any) => void) {
+  subscribeMinistries(callback: (ministries: Ministry[]) => void, onError?: (error: unknown) => void) {
     return onSnapshot(collection(db, MINISTRIES_COLLECTION), (snapshot) => {
       const ministries = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Ministry))
         .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));

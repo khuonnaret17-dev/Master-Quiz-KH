@@ -1,11 +1,10 @@
 'use client';
 
 import { useFirebase } from "@/lib/FirebaseProvider";
-import { LogIn, LogOut, User as UserIcon, ChevronDown, Brain, Crown, X, Lock, AlertCircle, CheckCircle2 } from "lucide-react";
+import { LogIn, LogOut, User as UserIcon, ChevronDown, Crown, X, Lock, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import SafeImage from "@/components/SafeImage";
-import Link from "next/link";
 
 export function UserNav() {
   const { user, logout, authLoading, isLoggingIn, userRole, isPremium, loginCustomMember, registerCustomMember, loginCustomAdmin } = useFirebase();
@@ -77,8 +76,9 @@ export function UserNav() {
           setLocalAuthError(res.error || 'លេខសម្ងាត់អ្នកគ្រប់គ្រងមិនត្រឹមត្រូវ');
         }
       }
-    } catch (err: any) {
-      setLocalAuthError(err.message || 'មានបញ្ហាបច្ចេកទេស');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'មានបញ្ហាបច្ចេកទេស';
+      setLocalAuthError(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -216,6 +216,20 @@ export function UserNav() {
                             className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#094C72] transition-all font-sans"
                           />
                         </div>
+                      </div>
+
+                      <div className="text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRegistering(!isRegistering);
+                            setLocalAuthError(null);
+                            setLocalAuthSuccess(null);
+                          }}
+                          className="text-[10px] font-bold text-[#094C72] hover:underline font-khmer cursor-pointer"
+                        >
+                          {isRegistering ? "មានគណនីរួចហើយ? ចូលគណនី" : "មិនទាន់មានគណនី? ចុះឈ្មោះ"}
+                        </button>
                       </div>
 
                       {isRegistering && (

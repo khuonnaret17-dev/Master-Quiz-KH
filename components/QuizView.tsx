@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Award, HelpCircle, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Award, HelpCircle, CheckCircle2, XCircle, Sparkles, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import SafeImage from '@/components/SafeImage';
@@ -9,6 +9,7 @@ import { Ministry, Quiz, QuizType } from '@/lib/types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { CategorySection } from '@/components/WebDocumentView';
+import { generateQuizImageBlob } from '@/lib/quiz-image-generator';
 
 interface QuizViewProps {
   ministry: Ministry;
@@ -30,6 +31,55 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
   const [showIntermediateResult, setShowIntermediateResult] = useState(false);
 
   const [shuffledOptions, setShuffledOptions] = useState<{ originalKey: string; value: string }[]>([]);
+  const [isSharing, setIsSharing] = useState(false);
+
+  const handleShareTelegram = async () => {
+    if (!currentQuiz) return;
+    setIsSharing(true);
+    try {
+      const blob = await generateQuizImageBlob(
+        {
+          question: currentQuiz.question,
+          type: quizType === 'MULTIPLE_CHOICE' ? 'mcq' : 'qa',
+          options: currentQuiz.options,
+          correctAnswer: currentQuiz.correctAnswer,
+          answer: currentQuiz.answer,
+          explanation: currentQuiz.explanation
+        },
+        {
+          khmerName: ministry.khmerName,
+          name: ministry.name,
+          logo: ministry.logo
+        }
+      );
+
+      const file = new File([blob], `Vignasa_Quiz_${currentIdx + 1}.png`, { type: 'image/png' });
+      
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'Vignasa Quiz Share',
+          text: `សំណួរទី ${currentIdx + 1}: ${currentQuiz.question}`
+        });
+      } else {
+        // Fallback: Download the image
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Vignasa_Quiz_${currentIdx + 1}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        alert("រូបភាពត្រូវបានរក្សាទុក! អ្នកអាចផ្ញើវាទៅកាន់ Telegram បាន។");
+      }
+    } catch (err) {
+      console.error("Sharing failed:", err);
+      alert("បរាជ័យក្នុងការចែករំលែករូបភាព។");
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   React.useEffect(() => {
     const filtered = (ministry.quizzes || []).filter(q => q.category === category && (q.type || 'MULTIPLE_CHOICE') === quizType);
@@ -111,8 +161,6 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
       </div>
     );
   }
-
-  const progressPercentage = ((currentIdx + 1) / quizzes.length) * 100;
 
   const optionLabels: { [key: string]: string } = {
     "A": "ក", "B": "ខ", "C": "គ", "D": "ឃ"
@@ -492,7 +540,7 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
                       <div className="space-y-2">
                         <h3 className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-[#D4AF37]">ឯកសារយោង / ពន្យល់</h3>
                         <p className="text-sm md:text-base leading-relaxed text-[#1A1A1A]/80 italic font-medium whitespace-pre-wrap">
-                          {currentQuiz.explanation.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
+                          {currentQuiz.explanation?.split(/(https?:\/\/[^\s]+|www\.[^\s]+)/g).map((part: string, i: number) => 
                             part.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/g) ? (
                               <a key={i} href={part.startsWith('www.') ? `https://${part}` : part} target="_blank" rel="noopener noreferrer" className="text-[#D4AF37] hover:text-[#B3932F] underline break-all not-italic font-bold relative z-10 pointer-events-auto">
                                 {part}
@@ -506,7 +554,21 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
                     </div>
                   )}
 
-                  <div className="flex justify-end pt-4 md:pt-6">
+                  <div className="flex justify-between items-center pt-4 md:pt-6">
+                    <Button
+                      onClick={handleShareTelegram}
+                      disabled={isSharing}
+                      variant="outline"
+                      className="h-14 md:h-16 px-6 md:px-8 rounded-xl md:rounded-2xl border-2 border-sky-100 hover:border-sky-500 hover:bg-sky-50 text-sky-600 font-bold transition-all gap-3"
+                    >
+                      {isSharing ? (
+                        <div className="w-5 h-5 border-2 border-sky-600/20 border-t-sky-600 rounded-full animate-spin" />
+                      ) : (
+                        <Send className="w-5 h-5" />
+                      )}
+                      <span className="hidden sm:inline font-khmer">ចែករំលែកទៅ Telegram</span>
+                    </Button>
+
                     <Button 
                       onClick={handleNext}
                       className="h-14 md:h-16 px-8 md:px-12 rounded-xl md:rounded-2xl prestige-gradient hover:shadow-xl hover:shadow-[#1B365D]/20 text-[10px] md:text-xs font-bold uppercase tracking-widest transition-all gap-2 md:gap-3"

@@ -16,12 +16,11 @@ import { Quiz } from './types';
  * c. to call (T)
  */
 export function parseBulkQuizzes(text: string, category: string = 'ចំណេះដឹងទូទៅ'): Quiz[] {
-  const lines = text.split('\n');
+  const lines = text?.split('\n');
   const quizzes: Quiz[] = [];
   let currentQuiz: Partial<Quiz> | null = null;
   let optionsCount = 0;
 
-  const optionMarkers = ['ក', 'ខ', 'គ', 'ឃ', 'A', 'B', 'C', 'D', 'a', 'b', 'c', 'd'];
   const khmerToLatin: Record<string, string> = { 'ក': 'A', 'ខ': 'B', 'គ': 'C', 'ឃ': 'D' };
 
   for (let i = 0; i < lines.length; i++) {

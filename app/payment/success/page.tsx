@@ -1,5 +1,7 @@
 'use client';
 
+
+
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFirebase } from '@/lib/FirebaseProvider';
@@ -20,7 +22,7 @@ function PaymentSuccessContent() {
       }
       
       try {
-        const plan = searchParams.get('plan');
+        const plan = searchParams?.get('plan');
         let months = 120; // default for lifetime
         if (plan === 'BASIC_1M') months = 1;
         else if (plan === 'BASIC_6M') months = 6;

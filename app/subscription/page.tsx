@@ -1,15 +1,16 @@
 'use client';
 
+
+
 import { motion } from "motion/react";
 import { Check, Crown, Zap, ArrowLeft, X } from "lucide-react";
 import { useFirebase } from "@/lib/FirebaseProvider";
 import { useRouter } from "next/navigation";
 import { QRCodeCanvas } from "qrcode.react";
-import Link from "next/link";
 import { useState } from "react";
 
 export default function SubscriptionPage() {
-  const { user, upgradeToPremium } = useFirebase();
+  const { user } = useFirebase();
   const router = useRouter();
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 

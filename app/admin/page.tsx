@@ -1,19 +1,75 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
+
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useFirebase } from '@/lib/FirebaseProvider';
 import { db } from '@/lib/firebase';
 import { setDoc, doc, deleteDoc, collection, onSnapshot, updateDoc } from 'firebase/firestore';
-import { ministries as initialMinistries } from '@/lib/data';
-import { Ministry } from '@/lib/types';
+import { Ministry, QuizCategory, ShortAnswerCategory } from '@/lib/types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Save, X, Pencil, ArrowLeft, ArrowUp, ArrowDown, Globe, AlertCircle, CheckCircle2, Plus, Trash2, ChevronDown, ChevronUp, GripVertical, ExternalLink, Send, Users, Shield, Crown, Key, BookOpen, Building2 } from 'lucide-react';
+import { Save, X, Pencil, ArrowLeft, ArrowUp, ArrowDown, AlertCircle, CheckCircle2, Plus, Trash2, ChevronDown, ChevronUp, GripVertical, ExternalLink, Send, Users, Shield, Crown, Key, BookOpen, Building2 } from 'lucide-react';
 import Link from 'next/link';
 import SafeImage from '@/components/SafeImage';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { firestoreService } from '@/lib/firestore-service';
+
+interface AdminQuizItem {
+  question: string;
+  options?: string[];
+  correctIndex?: number;
+  answer?: string;
+  explanation?: string;
+}
+
+interface AdminCategory {
+  category: string;
+  items: AdminQuizItem[];
+  subCategories?: AdminCategory[];
+}
+
+interface AdminUser {
+  uid: string;
+  username: string;
+  source: 'custom' | 'standard';
+  role?: 'ADMIN' | 'USER';
+  isPremium?: boolean;
+  premiumUntil?: { toDate?: () => Date } | string | null;
+  createdAt?: { toDate?: () => Date } | string | null;
+  email?: string;
+  name?: string;
+  bankInfo?: {
+    bankName: string;
+    accountNumber: string;
+    accountHolder: string;
+    active: boolean;
+    linkedAt: string;
+  };
+}
+
+function parseTimestamp(val: { toDate?: () => Date } | string | null | undefined): number {
+  if (!val) return 0;
+  if (typeof val === 'object' && typeof val.toDate === 'function') {
+    return val.toDate().getTime();
+  }
+  if (typeof val === 'string') {
+    const time = new Date(val).getTime();
+    return isNaN(time) ? 0 : time;
+  }
+  return 0;
+}
+
+function formatDateString(val: { toDate?: () => Date } | string | null | undefined): string {
+  if (!val) return '-';
+  if (typeof val === 'object' && typeof val.toDate === 'function') {
+    return val.toDate().toLocaleDateString();
+  }
+  if (typeof val === 'string') {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString();
+  }
+  return '-';
+}
 
 function CategoryEditor({
   categories,
@@ -23,12 +79,12 @@ function CategoryEditor({
   parentPath = [],
   onSendTelegram
 }: {
-  categories: any[];
-  updateParent: (newCategories: any[]) => void;
+  categories: AdminCategory[];
+  updateParent: (newCategories: AdminCategory[]) => void;
   type: 'mcq' | 'qa';
   depth?: number;
   parentPath?: string[];
-  onSendTelegram?: (item: any, type: 'mcq' | 'qa', elementId: string, categoryName: string) => void;
+  onSendTelegram?: (item: AdminQuizItem, type: 'mcq' | 'qa', elementId: string, categoryName: string) => void;
 }) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
@@ -36,7 +92,7 @@ function CategoryEditor({
     setExpanded(prev => ({ ...prev, [cIdx]: prev[cIdx] === undefined ? false : !prev[cIdx] }));
   };
 
-  const handleUpdateCategory = (cIdx: number, updatedCat: any) => {
+  const handleUpdateCategory = (cIdx: number, updatedCat: AdminCategory) => {
     const newCats = [...categories];
     newCats[cIdx] = updatedCat;
     updateParent(newCats);
@@ -46,9 +102,9 @@ function CategoryEditor({
   const [bulkText, setBulkText] = useState('');
 
   const parseBulkData = (text: string) => {
-      const items: any[] = [];
-      const lines = text.split('\n');
-      let currentItem: any = null;
+      const items: AdminQuizItem[] = [];
+      const lines = text?.split('\n');
+      let currentItem: AdminQuizItem | null = null;
       let inAnswer = false;
       let lastLineBlank = true;
       
@@ -60,7 +116,7 @@ function CategoryEditor({
           }
 
           // Question: Find "1. ..." or "១. ..." with optional spaces and delimiters
-          const qMatch = trimmedLine.match(/^([០-៩a-zA-Z0-9]+)\s*[.\-)]\s*(.*)/);
+          const qMatch = trimmedLine.match(/^([០-❾a-zA-Z0-9]+)\s*[.\-)]\s*(.*)/);
           const isProbablyQuestion = qMatch && (lastLineBlank || !inAnswer || trimmedLine.includes('តើ') || trimmedLine.includes('?'));
 
           if (isProbablyQuestion) {
@@ -92,6 +148,7 @@ function CategoryEditor({
                   .trim();
               }
               
+              if (!currentItem.options) currentItem.options = [];
               currentItem.options.push(cleanOptText);
               if (isCorrect) currentItem.correctIndex = currentItem.options.length - 1;
             } else {
@@ -101,7 +158,7 @@ function CategoryEditor({
                                          trimmedLine.startsWith('ឯកសារយោង') || 
                                          trimmedLine.toLowerCase().startsWith('ref') || 
                                          trimmedLine.toLowerCase().startsWith('source') ||
-                                         currentItem.options.length > 0;
+                                         (currentItem.options && currentItem.options.length > 0);
                if (isExplanationLine) {
                  currentItem.explanation = currentItem.explanation 
                    ? currentItem.explanation + '\n' + trimmedLine 
@@ -168,7 +225,6 @@ function CategoryEditor({
       target.selectionStart = target.selectionEnd = start + 1;
       
       // Trigger the appropriate onChange
-      const event = { target: { value: newValue } } as any;
       target.dispatchEvent(new Event('input', { bubbles: true }));
     }
   };
@@ -241,14 +297,14 @@ function CategoryEditor({
             <div className="space-y-4 ml-8">
               {/* Render Items */}
               <div className="space-y-4">
-                {cat.items && cat.items.map((item: any, iIdx: number) => {
+                {cat.items && cat.items.map((item: AdminQuizItem, iIdx: number) => {
                   const uniqueId = `admin-item-${type}-${depth}-${cIdx}-${iIdx}`;
                   return (
                     <div key={iIdx} id={uniqueId} className="p-4 border border-slate-200 rounded-2xl text-xs bg-white shadow-sm space-y-2.5 relative overflow-hidden">
                       <textarea
                         className="w-full font-bold bg-transparent outline-none border-b border-slate-100 pb-1.5 resize-none overflow-hidden"
                         value={item.question}
-                        rows={item.question ? item.question.split('\n').length : 1}
+                        rows={item.question ? item.question?.split('\n').length : 1}
                         onKeyDown={handleKeyDown}
                         onChange={(e) => {
                           const newItems = [...cat.items];
@@ -260,7 +316,7 @@ function CategoryEditor({
                       
                       {type === 'mcq' ? (
                         <div className="grid grid-cols-2 gap-2 mt-2">
-                          {item.options.map((opt: string, oIdx: number) => (
+                          {(item.options || []).map((opt: string, oIdx: number) => (
                             <div key={oIdx} className="flex items-center gap-1.5 p-1 bg-slate-50/50 rounded-lg">
                               <input 
                                 type="radio"
@@ -277,7 +333,10 @@ function CategoryEditor({
                                 placeholder={`Option ${oIdx + 1}`}
                                 onChange={(e) => {
                                   const newItems = [...cat.items];
-                                  newItems[iIdx].options[oIdx] = e.target.value;
+                                  if (!newItems[iIdx].options) {
+                                    newItems[iIdx].options = [];
+                                  }
+                                  newItems[iIdx].options![oIdx] = e.target.value;
                                   handleUpdateCategory(cIdx, { ...cat, items: newItems });
                                 }}
                                 className="text-xs w-full bg-white rounded px-1.5 py-1 outline-none border border-slate-100 focus:border-blue-200"
@@ -289,7 +348,7 @@ function CategoryEditor({
                         <textarea
                           value={item.answer}
                           placeholder="Answer"
-                          rows={item.answer ? item.answer.split('\n').length : 1}
+                          rows={item.answer ? item.answer?.split('\n').length : 1}
                           onKeyDown={handleKeyDown}
                           onChange={(e) => {
                             const newItems = [...cat.items];
@@ -304,7 +363,7 @@ function CategoryEditor({
                       <textarea
                         value={item.explanation || ''}
                         placeholder="Explanation (ការពន្យល់ - ស្រេចចិត្ត)"
-                        rows={item.explanation ? item.explanation.split('\n').length : 1}
+                        rows={item.explanation ? item.explanation?.split('\n').length : 1}
                         onKeyDown={handleKeyDown}
                         onChange={(e) => {
                           const newItems = [...cat.items];
@@ -361,7 +420,7 @@ function CategoryEditor({
                           <button 
                             type="button"
                             onClick={() => {
-                              const newItems = cat.items.filter((_: any, i: number) => i !== iIdx);
+                              const newItems = cat.items.filter((_: AdminQuizItem, i: number) => i !== iIdx);
                               handleUpdateCategory(cIdx, { ...cat, items: newItems });
                             }}
                             className="text-slate-400 hover:text-red-550 hover:bg-red-50 p-1.5 rounded-lg transition-all"
@@ -437,14 +496,18 @@ function CategoryEditor({
 }
   
 export default function AdminPage() {
+  const [isMounted, setIsMounted] = useState(false);
   const { ministries, loading, user, authLoading, login, userRole } = useFirebase();
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Ministry | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'INSTITUTION' | 'SUBJECT' | 'USERS'>('INSTITUTION');
-  const [usersInfo, setUsersInfo] = useState<any[]>([]);
+  const [usersInfo, setUsersInfo] = useState<AdminUser[]>([]);
   const [userSearchTerm, setUserSearchTerm] = useState('');
 
   useEffect(() => {
@@ -455,14 +518,14 @@ export default function AdminPage() {
       const setupListener = async () => {
         try {
           
-          let regularUsers: any[] = [];
-          let customUsers: any[] = [];
+          let regularUsers: AdminUser[] = [];
+          let customUsers: AdminUser[] = [];
           
           const updateCombined = () => {
              const combined = [...customUsers, ...regularUsers];
              combined.sort((a, b) => {
-               const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-               const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+               const timeA = parseTimestamp(a.createdAt);
+               const timeB = parseTimestamp(b.createdAt);
                return timeB - timeA;
              });
              setUsersInfo(combined);
@@ -512,19 +575,19 @@ export default function AdminPage() {
     };
   }, [activeTab, user, userRole]);
 
-  const handleGrantPremium = (user: any) => {
+  const handleGrantPremium = (user: AdminUser) => {
     setUserActionDialog({ type: 'GRANT_PREMIUM', username: user.username, uid: user.uid, source: user.source });
   };
 
-  const handleRevokePremium = (user: any) => {
+  const handleRevokePremium = (user: AdminUser) => {
     setUserActionDialog({ type: 'REVOKE_PREMIUM', username: user.username, uid: user.uid, source: user.source });
   };
 
-  const handleDeleteUser = (user: any) => {
+  const handleDeleteUser = (user: AdminUser) => {
     setUserActionDialog({ type: 'DELETE_USER', username: user.username, uid: user.uid, source: user.source });
   };
 
-  const handleResetPassword = (user: any) => {
+  const handleResetPassword = (user: AdminUser) => {
     setNewPasswordValue("");
     setUserActionDialog({ type: 'RESET_PASSWORD', username: user.username, uid: user.uid, source: user.source });
   };
@@ -541,10 +604,10 @@ export default function AdminPage() {
 
       if (type === 'DELETE_USER') {
         await deleteDoc(userRef);
-        setUsersInfo(usersInfo.filter((u: any) => u.uid !== uid));
+        setUsersInfo(usersInfo.filter((u: AdminUser) => u.uid !== uid));
         setUserActionDialog(null);
       } else {
-        const updateData: any = {};
+        const updateData: Partial<AdminUser> & { password?: string } = {};
         if (type === 'GRANT_PREMIUM') {
           updateData.isPremium = true;
           updateData.premiumUntil = "2099-12-31T23:59:59.000Z"; 
@@ -561,9 +624,9 @@ export default function AdminPage() {
           updateData.password = newPasswordValue.trim();
         }
         
-        await updateDoc(userRef, updateData);
+        await updateDoc(userRef, updateData as Record<string, unknown>);
         
-        setUsersInfo(usersInfo.map((u: any) => {
+        setUsersInfo(usersInfo.map((u: AdminUser) => {
           if (u.uid === uid) {
             return { ...u, ...updateData };
           }
@@ -579,21 +642,13 @@ export default function AdminPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{id: string, name: string} | null>(null);
   const [userActionDialog, setUserActionDialog] = useState<{type: 'GRANT_PREMIUM' | 'REVOKE_PREMIUM' | 'DELETE_USER' | 'RESET_PASSWORD', username: string, uid: string, source: 'custom' | 'standard'} | null>(null);
   const [newPasswordValue, setNewPasswordValue] = useState("");
-  const [resetConfirm, setResetConfirm] = useState(false);
-  const [collapsedMcqs, setCollapsedMcqs] = useState<Record<number, boolean>>({});
-  const [collapsedQas, setCollapsedQas] = useState<Record<number, boolean>>({});
-  const [bulkImportingQa, setBulkImportingQa] = useState<Record<number, boolean>>({});
-  const [bulkTextQa, setBulkTextQa] = useState<Record<number, string>>({});
-  const [bulkImportingMcq, setBulkImportingMcq] = useState<Record<number, boolean>>({});
-  const [bulkTextMcq, setBulkTextMcq] = useState<Record<number, string>>({});
   const [autoSaving, setAutoSaving] = useState(false);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const initialLoadRef = useRef(true);
 
   // Telegram Sending State
-  const [sendingQuiz, setSendingQuiz] = useState<any | null>(null);
+  const [sendingQuiz, setSendingQuiz] = useState<AdminQuizItem | null>(null);
   const [sendingQuizType, setSendingQuizType] = useState<'mcq' | 'qa' | null>(null);
-  const [sendingElementId, setSendingElementId] = useState<string | null>(null);
   const [sendingCategoryName, setSendingCategoryName] = useState<string>('');
   const [telegramChatId, setTelegramChatId] = useState("");
   const [telegramFormat, setTelegramFormat] = useState<'POLL' | 'TEXT' | 'IMAGE'>('TEXT');
@@ -605,7 +660,6 @@ export default function AdminPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('vignasa_telegram_chat_id') || localStorage.getItem('telegramChatId') || "";
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTelegramChatId(saved);
     }
   }, []);
@@ -641,13 +695,13 @@ export default function AdminPage() {
                 text += `<b>${label}.</b> ${escapeHTML(opt)}\n`;
               }
             });
-            const correctLabel = ["A", "B", "C", "D"][sendingQuiz.correctIndex] || "A";
+            const correctLabel = ["A", "B", "C", "D"][sendingQuiz.correctIndex ?? 0] || "A";
             text += `\n<b>ចម្លើយត្រឹមត្រូវ៖</b> ${correctLabel}`;
           } else {
             text += `<b>ចម្លើយ៖</b> ${escapeHTML(sendingQuiz.answer || '')}`;
           }
           
-          let formattedExplanation = "ពន្យល់ ៖ គ្មាន";
+          let formattedExplanation = "";
           if (sendingQuiz.explanation) {
              const trimmedExp = sendingQuiz.explanation.trim();
              if (/^(ពន្យល់|យោង|ឯកសារយោង)/.test(trimmedExp)) {
@@ -657,8 +711,10 @@ export default function AdminPage() {
              }
           }
 
-          text += `\n\n@qiuzs_bot | វិញ្ញាសា | ${categoryFooter}`;
-          text += `\n\n<b>${escapeHTML(formattedExplanation)}</b>`;
+          text += `\n\n<a href="https://t.me/qiuzs_bot">Master Quiz KH</a> | វិញ្ញាសា | ${categoryFooter}`;
+          if (formattedExplanation) {
+            text += `\n\n<b>${escapeHTML(formattedExplanation)}</b>`;
+          }
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
           method: 'POST',
@@ -690,7 +746,7 @@ export default function AdminPage() {
 
         const correctIndex = Math.min(sendingQuiz.correctIndex || 0, optionsList.length - 1);
 
-        const payload: any = {
+        const payload: Record<string, unknown> = {
           chat_id: telegramChatId.trim(),
           question: (sendingQuiz.question || '').substring(0, 300),
           options: optionsList,
@@ -699,7 +755,7 @@ export default function AdminPage() {
           is_anonymous: true
         };
 
-        let formattedExplanation = "ពន្យល់ ៖ គ្មាន";
+        let formattedExplanation = "";
         if (sendingQuiz.explanation) {
            const trimmedExp = sendingQuiz.explanation.trim();
            if (/^(ពន្យល់|យោង|ឯកសារយោង)/.test(trimmedExp)) {
@@ -709,14 +765,20 @@ export default function AdminPage() {
            }
         }
 
-        const prefix = `@qiuzs_bot | វិញ្ញាសា | ${categoryFooter}\n\n`;
+        const prefix = `<a href="https://t.me/qiuzs_bot">Master Quiz KH</a> | វិញ្ញាសា | ${categoryFooter}\n\n`;
+        const prefixTextLength = `Master Quiz KH | វិញ្ញាសា | ${categoryFooter}\n\n`.length;
         const suffix = "";
         let expText = formattedExplanation;
-        const allowedLen = 200 - suffix.length - prefix.length;
-        if (expText.length > allowedLen) {
-          expText = expText.substring(0, allowedLen - 3) + "...";
+        if (expText) {
+          const allowedLen = 200 - suffix.length - prefixTextLength;
+          if (expText.length > allowedLen) {
+            expText = expText.substring(0, allowedLen - 3) + "...";
+          }
+          payload.explanation = prefix + escapeHTML(expText) + suffix;
+        } else {
+          payload.explanation = prefix.trim();
         }
-        payload.explanation = prefix + expText + suffix;
+        payload.explanation_parse_mode = 'HTML';
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPoll`, {
           method: 'POST',
@@ -747,21 +809,21 @@ export default function AdminPage() {
           }
         );
 
-        if (!blob) throw new Error("បរាជ័យក្នុងការបង្កើតឯកសាររូបភាព!");
+        if (!blob || blob.size === 0) throw new Error("បរាជ័យក្នុងការបង្កើតឯកសាររូបភាព!");
 
         setTelegramProgress("កំពុងផ្ញើរូបភាពទៅ Telegram...");
         const formData = new FormData();
         formData.append("chat_id", telegramChatId.trim());
         formData.append("photo", blob, "quiz.png");
 
-        let caption = `សំណួរ៖ ${(sendingQuiz.question || '').substring(0, 300)}`;
+        let caption = `<b>សំណួរ៖</b> ${escapeHTML((sendingQuiz.question || '').substring(0, 300))}`;
         if (sendingQuizType === 'mcq') {
-          caption += `\n(សូមពិនិត្យចម្លើយត្រឹមត្រូវ និងការពន្យល់ក្នុងរូបភាព)`;
+          caption += `\n<i>(សូមពិនិត្យចម្លើយត្រឹមត្រូវ និងការពន្យល់ក្នុងរូបភាព)</i>`;
         } else {
-          caption += `\n(ចម្លើយ៖ ${(sendingQuiz.answer || '').substring(0, 150)})`;
+          caption += `\n<b>ចម្លើយ៖</b> ${escapeHTML((sendingQuiz.answer || '').substring(0, 150))}`;
         }
 
-        let formattedExplanation = "ពន្យល់ ៖ គ្មាន";
+        let formattedExplanation = "";
         if (sendingQuiz.explanation) {
            const trimmedExp = sendingQuiz.explanation.trim();
            if (/^(ពន្យល់|យោង|ឯកសារយោង)/.test(trimmedExp)) {
@@ -771,9 +833,12 @@ export default function AdminPage() {
            }
         }
 
-        caption += `\n\n@qiuzs_bot | វិញ្ញាសា | ${categoryFooter}`;
-        caption += `\n\n${formattedExplanation}`;
+        caption += `\n\n<a href="https://t.me/qiuzs_bot">Master Quiz KH</a> | វិញ្ញាសា | ${categoryFooter}`;
+        if (formattedExplanation) {
+          caption += `\n\n<b>${escapeHTML(formattedExplanation)}</b>`;
+        }
         formData.append("caption", caption);
+        formData.append("parse_mode", "HTML");
 
         const res = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
           method: 'POST',
@@ -784,10 +849,10 @@ export default function AdminPage() {
 
       alert("ផ្ញើទៅ Telegram បានជោគជ័យ! 🎉");
       setSendingQuiz(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      let errorMsg = err.message;
-      if (errorMsg.includes("chat not found")) {
+      let errorMsg = err instanceof Error ? err.message : String(err);
+      if (errorMsg?.includes("chat not found")) {
         errorMsg = "រកមិនឃើញ Chat ទេ! សូមប្រាកដថាអ្នកបានបញ្ជាក់ ID ត្រឹមត្រូវ និងបានបញ្ចូល Bot (@VignasaCambodia_Bot) ទៅក្នុង Group/Channel ជា Admin ឬអ្នកបានចុច Start Bot នេះរួចហើយ។";
       }
       setTelegramError(`មិនអាចផ្ញើបានទេ៖ ${errorMsg}`);
@@ -802,7 +867,7 @@ export default function AdminPage() {
     try {
       new URL(url);
       return null;
-    } catch (e) {
+    } catch {
       return "Please enter a valid URL (e.g., https://example.com/logo.png)";
     }
   };
@@ -898,137 +963,9 @@ export default function AdminPage() {
      }
   }, [editingId]);
 
-  const toggleMcq = (idx: number) => setCollapsedMcqs(prev => ({ ...prev, [idx]: !prev[idx] }));
-  const toggleQa = (idx: number) => setCollapsedQas(prev => ({ ...prev, [idx]: !prev[idx] }));
-
-  const handleImportBulkMcq = (cIdx: number) => {
-    if (!editForm || !editForm.mcqs) return;
-    const text = bulkTextMcq[cIdx] || '';
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const newItems: any[] = [];
-    let currentItem: any = null;
-
-    for (let i = 0; i < lines.length; i++) {
-       const line = lines[i];
-       const isOptionRegex = /^([កខគឃងចឆជឈញ]|[a-zA-Z])\s*\.\s+/i;
-       
-       if (!isOptionRegex.test(line) && (!currentItem || currentItem.options.length >= 4)) {
-          if (currentItem) {
-              while (currentItem.options.length < 4) currentItem.options.push(`Option ${currentItem.options.length + 1}`);
-              newItems.push(currentItem);
-          }
-          currentItem = {
-             question: line.replace(/^([០-៩0-9]+)\s*[.\-)]\s*/, ''),
-             options: [],
-             correctIndex: 0
-          };
-       } else if (currentItem && currentItem.options.length < 4) {
-          let optText = line.replace(isOptionRegex, '');
-          if (optText.includes('(ចម្លើយត្រឹមត្រូវ)')) {
-             currentItem.correctIndex = currentItem.options.length;
-             optText = optText.replace(/\s*\(ចម្លើយត្រឹមត្រូវ\)/, '');
-          }
-          currentItem.options.push(optText.trim());
-       }
-    }
-    if (currentItem) {
-       while (currentItem.options.length < 4) currentItem.options.push(`Option ${currentItem.options.length + 1}`);
-       newItems.push(currentItem);
-    }
-
-    const mcqs = [...editForm.mcqs];
-    mcqs[cIdx].items = [...mcqs[cIdx].items, ...newItems];
-    setEditForm({ ...editForm, mcqs });
-    
-    setBulkImportingMcq(prev => ({ ...prev, [cIdx]: false }));
-    setBulkTextMcq(prev => ({ ...prev, [cIdx]: '' }));
-  };
-
-  const handleImportBulkQa = (cIdx: number) => {
-    if (!editForm || !editForm.shortAnswers) return;
-    const text = bulkTextQa[cIdx] || '';
-    const lines = text.split('\n').map(l => l.trimEnd());
-    const newItems: any[] = [];
-    let currentItem: { question: string, answer: string, explanation?: string } | null = null;
-    let isAnswering = false;
-    let isExplanation = false;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-
-      // Check if line looks like a question start: "[Number]. " or "[Number]) "
-      const isQuestionStart = /^([០-៩0-9]+)\s*[.\-)]\s*/.test(line);
-      const isLikelyQuestion = isQuestionStart && (line.includes('?') || line.includes('តើ') || line.includes('ណា') || line.includes('ប៉ុន្មាន'));
-      
-      // Check if line looks like an answer start: "ចម្លើយ ៖" or "ចម្លើយ :" or "ចម្លើយ:"
-      const isAnswerStart = /^(ចម្លើយ|ចម្លើយ\s*[៖:]+)\s*/.test(line);
-      
-      // Check if line looks like an explanation start: "ការពន្យល់" or "ឯកសារយោង"
-      const isExplStart = /^(ការពន្យល់|ឯកសារយោង|ការពន្យល់\s*[៖:]+|ឯកសារយោង\s*[៖:]+)\s*/.test(line);
-
-      if ((isLikelyQuestion || (isQuestionStart && !isAnswering)) && (!currentItem || isAnswering || isExplanation || isLikelyQuestion)) {
-        // If we were already building an item, push it
-        if (currentItem && (currentItem.question || currentItem.answer)) {
-          newItems.push(currentItem);
-        }
-        currentItem = {
-          question: line.replace(/^([០-៩0-9]+)\s*[.\-)]\s*/, '').trim(),
-          answer: '',
-          explanation: ''
-        };
-        isAnswering = false;
-        isExplanation = false;
-      } else if (isAnswerStart && currentItem) {
-        isAnswering = true;
-        isExplanation = false;
-        // Strip the "ចម្លើយ ៖" prefix
-        const answerText = line.replace(/^(ចម្លើយ|ចម្លើយ\s*[៖:]+)\s*/, '').trim();
-        currentItem.answer = answerText;
-      } else if (isExplStart && currentItem) {
-        isExplanation = true;
-        isAnswering = false;
-        const explText = line.replace(/^(ការពន្យល់|ឯកសារយោង|ការពន្យល់\s*[៖:]+|ឯកសារយោង\s*[៖:]+)\s*/, '').trim();
-        currentItem.explanation = explText;
-      } else if (currentItem) {
-        if (isExplanation) {
-          currentItem.explanation += (currentItem.explanation ? '\n' : '') + line;
-        } else if (isAnswering) {
-          // Append to answer with newline preserved
-          currentItem.answer += (currentItem.answer ? '\n' : '') + line;
-        } else {
-          // Append to question
-          currentItem.question += (currentItem.question ? ' ' : '') + line;
-        }
-      } else {
-        // First line case if it doesn't match markers
-        currentItem = { question: line, answer: '', explanation: '' };
-        isAnswering = false;
-        isExplanation = false;
-      }
-    }
-
-    if (currentItem) {
-      newItems.push(currentItem);
-    }
-
-    const qa = [...editForm.shortAnswers];
-    qa[cIdx].items = [...qa[cIdx].items, ...newItems];
-    setEditForm({ ...editForm, shortAnswers: qa });
-    
-    setBulkImportingQa(prev => ({ ...prev, [cIdx]: false }));
-    setBulkTextQa(prev => ({ ...prev, [cIdx]: '' }));
-  };
-
   const handleEdit = (ministry: Ministry) => {
     setEditingId(ministry.id);
     setEditForm({ ...ministry });
-    setUrlError(null);
-  };
-
-  const handleCancel = () => {
-    setEditingId(null);
-    setEditForm(null);
     setUrlError(null);
   };
 
@@ -1099,7 +1036,7 @@ export default function AdminPage() {
     }
   };
 
-  const updateField = (field: keyof Ministry, value: any) => {
+  const updateField = (field: keyof Ministry, value: Ministry[keyof Ministry]) => {
     if (editForm) setEditForm({ ...editForm, [field]: value });
   };
 
@@ -1118,66 +1055,11 @@ export default function AdminPage() {
     const mcqs = [...(editForm?.mcqs || []), { category: "New Category", items: [] }];
     updateField('mcqs', mcqs);
   };
-  const removeMcqCategory = (catIdx: number) => {
-    const mcqs = (editForm?.mcqs || []).filter((_, i) => i !== catIdx);
-    updateField('mcqs', mcqs);
-  };
-  const addMcqItem = (catIdx: number) => {
-    const mcqs = [...(editForm?.mcqs || [])];
-    mcqs[catIdx].items.push({
-      question: "",
-      options: ["", "", "", ""],
-      correctIndex: 0,
-      explanation: ""
-    });
-    updateField('mcqs', mcqs);
-  };
-  const removeMcqItem = (catIdx: number, itemIdx: number) => {
-    const mcqs = [...(editForm?.mcqs || [])];
-    mcqs[catIdx].items = mcqs[catIdx].items.filter((_, i) => i !== itemIdx);
-    updateField('mcqs', mcqs);
-  };
 
   // QA Helpers
   const addQaCategory = () => {
     const qa = [...(editForm?.shortAnswers || []), { category: "New Category", items: [] }];
     updateField('shortAnswers', qa);
-  };
-  const removeQaCategory = (catIdx: number) => {
-    const qa = (editForm?.shortAnswers || []).filter((_, i) => i !== catIdx);
-    updateField('shortAnswers', qa);
-  };
-  const addQaItem = (catIdx: number) => {
-    const qa = [...(editForm?.shortAnswers || [])];
-    qa[catIdx].items.push({ question: "", answer: "" });
-    updateField('shortAnswers', qa);
-  };
-  const removeQaItem = (catIdx: number, itemIdx: number) => {
-    const qa = [...(editForm?.shortAnswers || [])];
-    qa[catIdx].items = qa[catIdx].items.filter((_, i) => i !== itemIdx);
-    updateField('shortAnswers', qa);
-  };
-
-  const resetToInitial = async () => {
-    setResetConfirm(true);
-  };
-
-  const confirmResetToInitial = async () => {
-    setSaving(true);
-    try {
-      for (const m of initialMinistries) {
-        await setDoc(doc(db, 'ministries', m.id), m);
-      }
-      setUrlError("Data reset successfully!"); // Using urlError for generic success messages temporarily
-      setTimeout(() => setUrlError(null), 3000);
-      setResetConfirm(false);
-    } catch (e) {
-      console.error("Reset error:", e);
-      setUrlError("Failed to reset data.");
-      setResetConfirm(false);
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleDragEnd = async (result: DropResult) => {
@@ -1198,7 +1080,7 @@ export default function AdminPage() {
     }
   };
 
-  if (loading || authLoading) {
+  if (!isMounted || loading || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-transparent">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1253,12 +1135,6 @@ export default function AdminPage() {
               >
                 <Plus className="w-4 h-4" /> {activeTab === 'INSTITUTION' ? 'Add Ministry' : 'Add Subject'}
               </button>
-              <button 
-                onClick={resetToInitial}
-                className="text-xs font-bold text-red-500 hover:bg-red-50 px-4 py-2.5 rounded-xl border border-red-100 transition-all"
-              >
-                Reset to Initial Data
-              </button>
             </div>
           )}
         </header>
@@ -1298,19 +1174,6 @@ export default function AdminPage() {
               <X className="w-4 h-4" />
             </button>
           </div>
-        )}
-
-        {resetConfirm && (
-           <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl flex flex-col sm:flex-row items-center gap-4 justify-between">
-              <div className="flex items-center gap-3 text-orange-800 font-medium text-sm">
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                This will overwrite all changes with initial data. Continue?
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setResetConfirm(false)} className="px-4 py-2 bg-white text-slate-600 text-sm font-bold border border-slate-200 rounded-lg hover:bg-slate-50 transition-all">Cancel</button>
-                <button onClick={confirmResetToInitial} disabled={saving} className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 transition-all disabled:opacity-50">Confirm Reset</button>
-              </div>
-           </div>
         )}
 
         {deleteConfirm && (
@@ -1510,12 +1373,11 @@ export default function AdminPage() {
                                   <div className="space-y-6">
                                     <CategoryEditor
                                     categories={editForm.mcqs || []}
-                                    updateParent={(newMcqs) => updateField('mcqs', newMcqs)}
+                                    updateParent={(newMcqs: AdminCategory[]) => updateField('mcqs', newMcqs as unknown as QuizCategory[])}
                                     type="mcq"
                                     onSendTelegram={(item, type, elementId, categoryName) => {
                                       setSendingQuiz(item);
                                       setSendingQuizType(type);
-                                      setSendingElementId(elementId);
                                       setSendingCategoryName(categoryName);
                                       setTelegramFormat('POLL');
                                     }}
@@ -1537,12 +1399,11 @@ export default function AdminPage() {
                                   <div className="space-y-6">
                                     <CategoryEditor
                                     categories={editForm.shortAnswers || []}
-                                    updateParent={(newQa) => updateField('shortAnswers', newQa)}
+                                    updateParent={(newQa: AdminCategory[]) => updateField('shortAnswers', newQa as unknown as ShortAnswerCategory[])}
                                     type="qa"
                                     onSendTelegram={(item, type, elementId, categoryName) => {
                                       setSendingQuiz(item);
                                       setSendingQuizType(type);
-                                      setSendingElementId(elementId);
                                       setSendingCategoryName(categoryName);
                                       setTelegramFormat('TEXT');
                                     }}
@@ -1630,7 +1491,7 @@ export default function AdminPage() {
                 <tbody>
                   {usersInfo
                     .filter(u => u.username?.toLowerCase().includes(userSearchTerm.toLowerCase()))
-                    .map((u: any, idx: number) => (
+                    .map((u: AdminUser, idx: number) => (
                     <tr key={u.uid || idx} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4 border-b border-slate-100 text-sm text-slate-500 text-center font-medium">{idx + 1}</td>
                       <td className="px-6 py-4 border-b border-slate-100">
@@ -1664,7 +1525,7 @@ export default function AdminPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 border-b border-slate-100 text-sm text-slate-600">
-                        {u.createdAt ? (u.createdAt.toDate ? u.createdAt.toDate().toLocaleDateString() : new Date(u.createdAt).toLocaleDateString()) : '-'}
+                        {formatDateString(u.createdAt)}
                       </td>
                       <td className="px-6 py-4 border-b border-slate-100 text-right">
                         {u.role !== 'ADMIN' && (

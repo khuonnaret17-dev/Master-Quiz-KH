@@ -2,17 +2,24 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { db, auth } from './firebase';
-import { collection, onSnapshot, query, setDoc, doc, getDocs, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, setDoc, doc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { ministries as initialMinistries } from './data';
 import { Ministry, UserRole, Progress, PdfDocument } from './types';
 import { firestoreService } from './firestore-service';
+
+export interface CustomUserSession {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+  isAnonymous?: boolean;
+}
 
 interface FirebaseContextType {
   ministries: Ministry[];
   documents: PdfDocument[];
   loading: boolean;
-  user: any;
+  user: User | CustomUserSession | null;
   userRole: UserRole | null;
   userProgress: Progress;
   isPremium: boolean;
@@ -40,7 +47,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [documents, setDocuments] = useState<PdfDocument[]>([]);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<User | CustomUserSession | null>(null);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [userProgress, setUserProgress] = useState<Progress>({});
   const [isPremium, setIsPremium] = useState<boolean>(false);
@@ -151,7 +158,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (checkCustomSession()) {
       return;
     }
@@ -194,7 +200,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           }
         }, (err) => {
           console.error("User doc error:", err);
-          if (err.message.includes('502')) {
+          if (err?.message?.includes('502')) {
             setError('បណ្ដាញភ្ជាប់មានបញ្ហា (Database Connection Error 502)');
           }
         });
@@ -255,28 +261,15 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     let unsubscribeDocs: (() => void) | undefined;
 
     const initData = async () => {
-      // 1. Handled Seeding (only if admin and empty)
-      if (userRole === 'ADMIN' && ministries.length === 0) {
-        try {
-          const snapshot = await getDocs(collection(db, 'ministries'));
-          if (snapshot.empty) {
-            for (const m of initialMinistries) {
-              await firestoreService.saveMinistry(m);
-            }
-          }
-        } catch (error) {
-          console.log('Seeding check skipped or unauthorized');
-        }
-      }
-
       // 2. Data Subscription
       unsubscribeData = firestoreService.subscribeMinistries((data) => {
         setMinistries(data);
         setLoading(false);
         setError(null);
-      }, (err: any) => {
+      }, (err: unknown) => {
         console.error("Ministries subscription error:", err);
-        if (err?.message?.includes('502')) {
+        const errMsg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : '';
+        if (errMsg.includes('502')) {
           setError('បណ្ដាញភ្ជាប់មានបញ្ហា (Database Connection Error 502)');
         }
       });
@@ -346,8 +339,9 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       } else {
         return { success: false, error: 'ឈ្មោះគណនី ឬលេខសម្ងាត់មិនត្រឹមត្រូវ!' };
       }
-    } catch (err: any) {
-      return { success: false, error: err.message || 'មានបញ្ហាបច្គេសសក្នុងដំណើរការចូលគណនី' };
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'មានបញ្ហាបច្គេសសក្នុងដំណើរការចូលគណនី';
+      return { success: false, error: errMsg };
     }
   };
 
@@ -411,8 +405,9 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         return { success: true };
       }
       return { success: false, error: 'បរិស្ថានរត់មិនគាំទ្រ' };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'មានបញ្ហាបច្ចេកទេសក្នុងដំណើរការចុះឈ្មោះ' };
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'មានបញ្ហាបច្ចេកទេសក្នុងដំណើរការចុះឈ្មោះ';
+      return { success: false, error: errMsg };
     }
   };
 
@@ -445,8 +440,9 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         return { success: true };
       }
       return { success: false, error: 'បរិស្ថានរត់មិនគាំទ្រ' };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'មានបញ្ហាបច្ចេកទេសក្នុងដំណើរការចូលជា Admin' };
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'មានបញ្ហាបច្ចេកទេសក្នុងដំណើរការចូលជា Admin';
+      return { success: false, error: errMsg };
     }
   };
 
@@ -470,10 +466,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
-    } catch (error: any) {
-      if (error.code === 'auth/cancelled-popup-request') {
+    } catch (error: unknown) {
+      const errCode = error && typeof error === 'object' && 'code' in error ? (error as { code: string }).code : '';
+      if (errCode === 'auth/cancelled-popup-request') {
         console.log('Login cancelled by user');
-      } else if (error.code === 'auth/popup-closed-by-user') {
+      } else if (errCode === 'auth/popup-closed-by-user') {
         console.log('Popup closed by user');
       } else {
         console.error('Login error:', error);
@@ -532,7 +529,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
     if (user.uid && user.uid.startsWith('custom_')) {
       if (typeof window !== 'undefined') {
-        const username = user.displayName;
+        const username = user.displayName || user.uid;
         const userRef = doc(db, 'custom_users', username.toLowerCase());
         const linkedBank = { bankName, accountNumber, accountHolder, active: true, linkedAt: new Date().toISOString() };
         await setDoc(userRef, { 
@@ -568,7 +565,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     
     if (user.uid && user.uid.startsWith('custom_')) {
       if (typeof window !== 'undefined') {
-        const username = user.displayName;
+        const username = user.displayName || user.uid;
         const userRef = doc(db, 'custom_users', username.toLowerCase());
         await setDoc(userRef, { 
           isPremium: false, 
@@ -605,7 +602,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
     if (user.uid && user.uid.startsWith('custom_')) {
       if (typeof window !== 'undefined') {
-        const username = user.displayName;
+        const username = user.displayName || user.uid;
         const userRef = doc(db, 'custom_users', username.toLowerCase());
         await setDoc(userRef, { 
           isPremium: true, 

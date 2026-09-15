@@ -1,5 +1,7 @@
 'use client';
 
+
+
 import { motion } from "motion/react";
 import { ArrowLeft, CheckCircle2, Crown, Sparkles, Trophy } from "lucide-react";
 import Link from "next/link";

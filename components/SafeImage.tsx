@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Image, { ImageProps } from 'next/image';
 import { isValidUrl } from '@/lib/utils';
 import { BookOpen } from 'lucide-react';
@@ -34,7 +34,7 @@ export default function SafeImage({ src, alt, fallback, className, ...props }: S
   // Handle Google Drive links specifically
   let displaySrc = src;
   if (src.includes('drive.google.com') && src.includes('/file/d/')) {
-    const id = src.split('/file/d/')[1]?.split('/')[0];
+    const id = src?.split('/file/d/')[1]?.split('/')[0];
     if (id) {
       displaySrc = `https://drive.google.com/uc?id=${id}`;
     }

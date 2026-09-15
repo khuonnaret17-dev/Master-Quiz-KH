@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { prompt, history } = body;
 
-    const ai = getAiClient();
+    const genAI = getAiClient();
 
     // Prepare system instructions for Cambodian Civil Service Prep Tutor
     const systemInstruction = 
@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
       parts: [{ text: prompt }],
     });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await genAI.models.generateContent({
+      model: "gemini-2.5-flash",
       contents,
       config: {
         systemInstruction,
@@ -61,10 +61,11 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ text: response.text });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Gemini API error:", error);
+    const errMsg = error instanceof Error ? error.message : "សូមអភ័យទោស! មានបញ្ហាក្នុងការទាក់ទងជាមួយ AI ជំនួយការរបស់អ្នក។ សូមប្រាកដថាអ្នកបានបន្ថែម GEMINI_API_KEY នៅក្នុងប្រព័ន្ធរួចរាល់។";
     return NextResponse.json(
-      { error: error?.message || "សូមអភ័យទោស! មានបញ្ហាក្នុងការទាក់ទងជាមួយ AI ជំនួយការរបស់អ្នក។ សូមប្រាកដថាអ្នកបានបន្ថែម GEMINI_API_KEY នៅក្នុងប្រព័ន្ធរួចរាល់។" },
+      { error: errMsg },
       { status: 500 }
     );
   }

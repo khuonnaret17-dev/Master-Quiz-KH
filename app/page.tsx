@@ -1,10 +1,10 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
+
 
 import { motion } from "motion/react";
 import { useFirebase } from "@/lib/FirebaseProvider";
-import { Search, Info, Brain, AlertCircle, Crown, LogIn, FileText, CheckCircle2, User, Lock } from "lucide-react";
+import { Search, Info, AlertCircle, LogIn, CheckCircle2, User, Lock } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link";
 
@@ -14,8 +14,8 @@ import { MinistryList } from "@/components/MinistryList";
 import SafeImage from "@/components/SafeImage";
 
 export default function Home() {
-  const { ministries, loading, authLoading, user, userProgress, userRole, error, isPremium, login, loginCustomMember, registerCustomMember, loginCustomAdmin, isLoggingIn } = useFirebase();
-  const [searchTerm, setSearchTerm] = useState("");
+  const { ministries, loading, authLoading, user, userProgress, loginCustomMember, registerCustomMember, loginCustomAdmin, userRole } = useFirebase();
+  const [searchTerm] = useState("");
   const [mainTab, setMainTab] = useState<'INSTITUTION' | 'SUBJECT'>('INSTITUTION');
   const router = useRouter();
 
@@ -66,8 +66,9 @@ export default function Home() {
           setLocalAuthError(res.error || 'លេខសម្ងាត់អ្នកគ្រប់គ្រងមិនត្រឹមត្រូវ');
         }
       }
-    } catch (err: any) {
-      setLocalAuthError(err.message || 'មានបញ្ហាបច្ចេកទេស');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'មានបញ្ហាបច្ចេកទេស';
+      setLocalAuthError(errMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -84,10 +85,9 @@ export default function Home() {
     );
   }
 
-  const isBlocked = !user;
 
   const filteredMinistries = ministries.filter(m => {
-    const matchesSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase()) || m.khmerName.includes(searchTerm);
+    const matchesSearch = (m.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) || (m.khmerName?.includes(searchTerm) || false);
     const matchesGroup = (mainTab === 'INSTITUTION' && (!m.groupType || m.groupType === 'INSTITUTION')) || 
                          (mainTab === 'SUBJECT' && m.groupType === 'SUBJECT');
     return matchesSearch && matchesGroup;
@@ -200,14 +200,18 @@ export default function Home() {
                     <span className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#FFFDF6] to-[#E2BD55] font-khmer">
                       {(() => {
                         const total = ministries.reduce((acc, m) => {
-                          let count = (m.quizzes?.length || 0);
-                          const countItems = (cats?: any[]): number => {
+                          const count = (m.quizzes?.length || 0);
+                          interface LocalCategory {
+                            items?: unknown[];
+                            subCategories?: LocalCategory[];
+                          }
+                          const countItems = (cats?: LocalCategory[]): number => {
                             if (!cats) return 0;
                             return cats.reduce((sum, cat) => {
                               return sum + (cat.items?.length || 0) + countItems(cat.subCategories);
                             }, 0);
                           };
-                          return acc + count + countItems(m.mcqs) + countItems(m.shortAnswers);
+                          return acc + count + countItems(m.mcqs as LocalCategory[]) + countItems(m.shortAnswers as LocalCategory[]);
                         }, 0);
                         
                         const khmerDigits = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];

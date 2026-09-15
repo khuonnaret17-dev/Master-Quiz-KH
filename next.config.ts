@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // @ts-ignore
-  allowedDevOrigins: ["ais-dev-lsrkwvvwqpneikxnw4dyom-228008958183.asia-southeast1.run.app", "localhost:3000"],
+  output: "standalone",
   /* config options here */
   images: {
     dangerouslyAllowSVG: true,

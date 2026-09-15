@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { ChevronRight, GraduationCap, CheckCircle2 } from 'lucide-react';
+import React from 'react';
+import { GraduationCap, CheckCircle2 } from 'lucide-react';
 import SafeImage from '@/components/SafeImage';
-import { Card, CardContent } from '@/components/ui/card';
 import { Ministry, Progress as UserProgress } from '@/lib/types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
