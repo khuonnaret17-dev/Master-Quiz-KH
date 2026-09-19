@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Award, HelpCircle, CheckCircle2, XCircle, Sparkles, Send } from 'lucide-react';
+import confetti from 'canvas-confetti';
+import { ChevronLeft, ChevronRight, Award, HelpCircle, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import SafeImage from '@/components/SafeImage';
@@ -31,7 +32,6 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
   const [showIntermediateResult, setShowIntermediateResult] = useState(false);
 
   const [shuffledOptions, setShuffledOptions] = useState<{ originalKey: string; value: string }[]>([]);
-  const [isSharing, setIsSharing] = useState(false);
 
   const handleShareTelegram = async () => {
     if (!currentQuiz) return;
@@ -207,6 +207,13 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
         return acc + 1; // For Q&A and Vocabulary, we count completion for now
       }, 0);
       onComplete(score);
+      if (score === quizzes.length) {
+        confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      }
     }
   };
 
@@ -554,21 +561,7 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
                     </div>
                   )}
 
-                  <div className="flex justify-between items-center pt-4 md:pt-6">
-                    <Button
-                      onClick={handleShareTelegram}
-                      disabled={isSharing}
-                      variant="outline"
-                      className="h-14 md:h-16 px-6 md:px-8 rounded-xl md:rounded-2xl border-2 border-sky-100 hover:border-sky-500 hover:bg-sky-50 text-sky-600 font-bold transition-all gap-3"
-                    >
-                      {isSharing ? (
-                        <div className="w-5 h-5 border-2 border-sky-600/20 border-t-sky-600 rounded-full animate-spin" />
-                      ) : (
-                        <Send className="w-5 h-5" />
-                      )}
-                      <span className="hidden sm:inline font-khmer">ចែករំលែកទៅ Telegram</span>
-                    </Button>
-
+                  <div className="flex justify-end items-center pt-4 md:pt-6">
                     <Button 
                       onClick={handleNext}
                       className="h-14 md:h-16 px-8 md:px-12 rounded-xl md:rounded-2xl prestige-gradient hover:shadow-xl hover:shadow-[#1B365D]/20 text-[10px] md:text-xs font-bold uppercase tracking-widest transition-all gap-2 md:gap-3"

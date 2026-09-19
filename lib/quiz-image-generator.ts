@@ -1,3 +1,5 @@
+// html-to-image and html2canvas dynamically imported on demand to keep initial bundle ultra fast
+
 interface QuizInput {
   question: string;
   type?: "mcq" | "qa";
@@ -524,7 +526,7 @@ export async function generateQuizImageBlob(
     }
 
     if ((!blob || blob.size === 0) && cardElement) {
-      const html2canvas = (await import('html2canvas')).default;
+      const { default: html2canvas } = await import('html2canvas');
       const canvas = await html2canvas(cardElement, {
         scale: 2,
         useCORS: true,

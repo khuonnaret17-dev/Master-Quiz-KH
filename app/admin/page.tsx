@@ -13,6 +13,8 @@ import Link from 'next/link';
 import SafeImage from '@/components/SafeImage';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { firestoreService } from '@/lib/firestore-service';
+import { generateQuizImageBlob } from '@/lib/quiz-image-generator';
+import { auth } from '@/lib/firebase';
 
 interface AdminQuizItem {
   question: string;
@@ -531,7 +533,6 @@ export default function AdminPage() {
              setUsersInfo(combined);
           };
 
-          const { auth } = await import('@/lib/firebase');
           const unsubCustom = onSnapshot(collection(db, 'custom_users'), (querySnapshot) => {
             customUsers = [];
             querySnapshot.forEach((doc) => {
@@ -789,9 +790,6 @@ export default function AdminPage() {
 
       } else if (telegramFormat === 'IMAGE') {
         setTelegramProgress("កំពុងបង្កើតរូបភាព...");
-        
-        // Import and use our beautiful, branded quiz image generator
-        const { generateQuizImageBlob } = await import('@/lib/quiz-image-generator');
         
         const blob = await generateQuizImageBlob(
           {

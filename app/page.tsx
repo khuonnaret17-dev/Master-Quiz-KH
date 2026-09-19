@@ -4,8 +4,8 @@
 
 import { motion } from "motion/react";
 import { useFirebase } from "@/lib/FirebaseProvider";
-import { Search, Info, AlertCircle, LogIn, CheckCircle2, User, Lock } from "lucide-react";
-import { useState } from "react";
+import { Search, Info, AlertCircle, LogIn, CheckCircle2, User, Lock, X, History } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 
 import { useRouter } from "next/navigation";
@@ -15,9 +15,55 @@ import SafeImage from "@/components/SafeImage";
 
 export default function Home() {
   const { ministries, loading, authLoading, user, userProgress, loginCustomMember, registerCustomMember, loginCustomAdmin, userRole } = useFirebase();
-  const [searchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [mainTab, setMainTab] = useState<'INSTITUTION' | 'SUBJECT'>('INSTITUTION');
   const router = useRouter();
+
+  // Recent searches state & persistence
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('cambodia_ministry_recent_searches');
+      if (saved) {
+        setRecentSearches(JSON.parse(saved));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const addRecentSearch = (term: string) => {
+    if (!term.trim()) return;
+    const cleaned = term.trim();
+    const updated = [cleaned, ...recentSearches.filter(s => s !== cleaned)].slice(0, 6);
+    setRecentSearches(updated);
+    try {
+      localStorage.setItem('cambodia_ministry_recent_searches', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  const removeRecentSearch = (e: React.MouseEvent, term: string) => {
+    e.stopPropagation();
+    const updated = recentSearches.filter(s => s !== term);
+    setRecentSearches(updated);
+    try {
+      localStorage.setItem('cambodia_ministry_recent_searches', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  const clearRecentSearches = () => {
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem('cambodia_ministry_recent_searches');
+    } catch {
+      // ignore
+    }
+  };
 
   // Custom dual-mode authentication state fields
   const [activeTab, setActiveTab] = useState<'MEMBER' | 'ADMIN'>('MEMBER');
@@ -74,6 +120,36 @@ export default function Home() {
     }
   };
 
+  const filteredMinistries = useMemo(() => {
+    const q = searchTerm.toLowerCase();
+    return ministries.filter(m => {
+      const matchesSearch = !q || (m.name?.toLowerCase().includes(q) || false) || (m.khmerName?.includes(searchTerm) || false);
+      const matchesGroup = (mainTab === 'INSTITUTION' && (!m.groupType || m.groupType === 'INSTITUTION')) || 
+                           (mainTab === 'SUBJECT' && m.groupType === 'SUBJECT');
+      return matchesSearch && matchesGroup;
+    });
+  }, [ministries, searchTerm, mainTab]);
+
+  const totalKhmerDigits = useMemo(() => {
+    const total = ministries.reduce((acc, m) => {
+      const count = (m.quizzes?.length || 0);
+      interface LocalCategory {
+        items?: unknown[];
+        subCategories?: LocalCategory[];
+      }
+      const countItems = (cats?: LocalCategory[]): number => {
+        if (!cats) return 0;
+        return cats.reduce((sum, cat) => {
+          return sum + (cat.items?.length || 0) + countItems(cat.subCategories);
+        }, 0);
+      };
+      return acc + count + countItems(m.mcqs as LocalCategory[]) + countItems(m.shortAnswers as LocalCategory[]);
+    }, 0);
+    
+    const khmerDigits = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
+    return total.toString().split('').map(d => khmerDigits[parseInt(d)] || d).join('');
+  }, [ministries]);
+
   if (loading || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-transparent text-slate-700 font-bold">
@@ -84,14 +160,6 @@ export default function Home() {
       </div>
     );
   }
-
-
-  const filteredMinistries = ministries.filter(m => {
-    const matchesSearch = (m.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) || (m.khmerName?.includes(searchTerm) || false);
-    const matchesGroup = (mainTab === 'INSTITUTION' && (!m.groupType || m.groupType === 'INSTITUTION')) || 
-                         (mainTab === 'SUBJECT' && m.groupType === 'SUBJECT');
-    return matchesSearch && matchesGroup;
-  });
 
   return (
     <main className="min-h-screen bg-transparent p-4 md:p-12">
@@ -198,25 +266,7 @@ export default function Home() {
                   <div className="flex flex-col items-center">
                     <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-[#FCECB8]/70 mb-0.5">ទិន្នន័យសរុប</span>
                     <span className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-[#FFFDF6] to-[#E2BD55] font-khmer">
-                      {(() => {
-                        const total = ministries.reduce((acc, m) => {
-                          const count = (m.quizzes?.length || 0);
-                          interface LocalCategory {
-                            items?: unknown[];
-                            subCategories?: LocalCategory[];
-                          }
-                          const countItems = (cats?: LocalCategory[]): number => {
-                            if (!cats) return 0;
-                            return cats.reduce((sum, cat) => {
-                              return sum + (cat.items?.length || 0) + countItems(cat.subCategories);
-                            }, 0);
-                          };
-                          return acc + count + countItems(m.mcqs as LocalCategory[]) + countItems(m.shortAnswers as LocalCategory[]);
-                        }, 0);
-                        
-                        const khmerDigits = ['០', '១', '២', '៣', '៤', '៥', '៦', '៧', '៨', '៩'];
-                        return total.toString().split('').map(d => khmerDigits[parseInt(d)] || d).join('');
-                      })()}
+                      {totalKhmerDigits}
                     </span>
                   </div>
                   <div className="w-px h-8 bg-white/20" />
@@ -450,17 +500,78 @@ export default function Home() {
           </motion.div>
         ) : (
           <>
+            {/* Search Input Bar */}
+            <div className="mb-4 max-w-xl mx-auto">
+              <div className="relative flex items-center">
+                <Search className="absolute left-4 text-slate-400 w-5 h-5 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && searchTerm.trim()) {
+                      addRecentSearch(searchTerm);
+                    }
+                  }}
+                  placeholder={mainTab === 'INSTITUTION' ? "ស្វែងរកឈ្មោះក្រសួង ឬស្ថាប័ន..." : "ស្វែងរកវិញ្ញាសា..."}
+                  className="w-full pl-12 pr-10 py-3.5 bg-white border border-slate-200 rounded-2xl text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#094C72] focus:border-transparent transition-all font-khmer placeholder:text-slate-400"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-3.5 p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Recent Searches Chips */}
+              {recentSearches.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 px-1">
+                  <div className="flex items-center gap-1 text-xs text-slate-500 font-khmer mr-1">
+                    <History className="w-3.5 h-3.5 text-[#094C72]" />
+                    <span>ស្វែងរកថ្មីៗ៖</span>
+                  </div>
+                  {recentSearches.map((term, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSearchTerm(term)}
+                      className="group inline-flex items-center gap-1.5 px-3 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-full text-xs text-slate-700 shadow-2xs transition-all font-khmer cursor-pointer"
+                    >
+                      <span>{term}</span>
+                      <span
+                        onClick={(e) => removeRecentSearch(e, term)}
+                        className="text-slate-400 hover:text-red-500 rounded-full p-0.5 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </span>
+                    </button>
+                  ))}
+                  <button
+                    onClick={clearRecentSearches}
+                    className="text-[10px] text-slate-400 hover:text-red-500 font-khmer ml-auto underline transition-colors cursor-pointer"
+                  >
+                    លុបប្រវត្តិទាំងអស់
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Content Display */}
             <MinistryList 
               ministries={filteredMinistries}
               userProgress={userProgress}
-              onSelect={(m, act) => router.push(`/ministry/${m.id}${act ? `?tab=${act}` : ''}`)}
+              onSelect={(m, act) => {
+                addRecentSearch(m.khmerName || m.name);
+                router.push(`/ministry/${m.id}${act ? `?tab=${act}` : ''}`);
+              }}
             />
 
             {filteredMinistries.length === 0 && (
               <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-300">
                 <Search className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-slate-500">រកមិនឃើញក្រសួងដែលអ្នកស្វែងរកទេ...</p>
+                <p className="text-slate-500 font-khmer">រកមិនឃើញទិន្នន័យដែលអ្នកស្វែងរកទេ...</p>
               </div>
             )}
           </>

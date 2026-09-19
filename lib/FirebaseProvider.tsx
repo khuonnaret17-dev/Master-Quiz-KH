@@ -2,8 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { db, auth } from './firebase';
-import { collection, onSnapshot, setDoc, doc, getDoc } from 'firebase/firestore';
-import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { collection, onSnapshot, setDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut, browserLocalPersistence, setPersistence } from 'firebase/auth';
 import { Ministry, UserRole, Progress, PdfDocument } from './types';
 import { firestoreService } from './firestore-service';
 
@@ -44,9 +44,32 @@ interface FirebaseContextType {
 const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
 
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
-  const [ministries, setMinistries] = useState<Ministry[]>([]);
-  const [documents, setDocuments] = useState<PdfDocument[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [ministries, setMinistries] = useState<Ministry[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('vignasa_ministries_cache');
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return [];
+  });
+  const [documents, setDocuments] = useState<PdfDocument[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('vignasa_documents_cache');
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (localStorage.getItem('vignasa_ministries_cache')) return false;
+      } catch {}
+    }
+    return true;
+  });
   const [user, setUser] = useState<User | CustomUserSession | null>(null);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [userProgress, setUserProgress] = useState<Progress>({});
@@ -61,7 +84,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     // Initialize persistence
     const initAuth = async () => {
       try {
-        const { browserLocalPersistence, setPersistence } = await import('firebase/auth');
         await setPersistence(auth, browserLocalPersistence);
       } catch (err) {
         console.error("Persistence error:", err);
@@ -79,18 +101,33 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // Set up real-time listener for ministries
+    // Set up real-time listener for ministries with sorting & caching
     const unsubscribeMinistries = onSnapshot(collection(db, 'ministries'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Ministry));
+      const data = snapshot.docs
+        .map(doc => ({ ...doc.data(), id: doc.id } as Ministry))
+        .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
       setMinistries(data);
+      setLoading(false);
+      setError(null);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('vignasa_ministries_cache', JSON.stringify(data));
+        } catch {}
+      }
     }, (error) => {
       console.error("Ministries real-time error:", error);
+      setLoading(false);
     });
 
-    // Set up real-time listener for documents
+    // Set up real-time listener for documents with caching
     const unsubscribeDocuments = onSnapshot(collection(db, 'documents'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as PdfDocument));
       setDocuments(data);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('vignasa_documents_cache', JSON.stringify(data));
+        } catch {}
+      }
     }, (error) => {
       console.error("Documents real-time error:", error);
     });
@@ -253,41 +290,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
     return () => clearInterval(interval);
   }, [premiumUntil, isPremium]);
-
-  useEffect(() => {
-    if (authLoading) return;
-
-    let unsubscribeData: (() => void) | undefined;
-    let unsubscribeDocs: (() => void) | undefined;
-
-    const initData = async () => {
-      // 2. Data Subscription
-      unsubscribeData = firestoreService.subscribeMinistries((data) => {
-        setMinistries(data);
-        setLoading(false);
-        setError(null);
-      }, (err: unknown) => {
-        console.error("Ministries subscription error:", err);
-        const errMsg = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : '';
-        if (errMsg.includes('502')) {
-          setError('បណ្ដាញភ្ជាប់មានបញ្ហា (Database Connection Error 502)');
-        }
-      });
-      
-      // 3. Documents Subscription
-      unsubscribeDocs = onSnapshot(collection(db, 'documents'), (snapshot) => {
-        const docs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as PdfDocument));
-        setDocuments(docs);
-      });
-    };
-
-    initData();
-
-    return () => {
-      if (unsubscribeData) unsubscribeData();
-      if (unsubscribeDocs) unsubscribeDocs();
-    };
-  }, [authLoading, userRole, ministries.length]);
 
   const loginCustomMember = async (username: string, password: string) => {
     if (!username || !password) {
@@ -541,7 +543,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     } else {
       const userRef = doc(db, 'users', user.uid);
       try {
-        const { serverTimestamp } = await import('firebase/firestore');
         await setDoc(userRef, {
           isPremium: true,
           premiumUntil: premiumUntil,
@@ -576,7 +577,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     } else {
       const userRef = doc(db, 'users', user.uid);
       try {
-        const { serverTimestamp } = await import('firebase/firestore');
         await setDoc(userRef, {
           isPremium: false,
           premiumUntil: null,
@@ -612,7 +612,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     } else {
       const userRef = doc(db, 'users', user.uid);
       try {
-        const { serverTimestamp } = await import('firebase/firestore');
         await setDoc(userRef, {
           isPremium: true,
           premiumUntil: premiumUntilTime,

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  serverExternalPackages: ["firebase", "@firebase/app", "@firebase/auth", "@firebase/firestore"],
   /* config options here */
   images: {
     dangerouslyAllowSVG: true,

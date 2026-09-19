@@ -2,7 +2,7 @@
 
 
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFirebase } from '@/lib/FirebaseProvider';
 import { CheckCircle2, Loader2 } from 'lucide-react';
@@ -13,13 +13,15 @@ function PaymentSuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
+  const hasProcessedRef = useRef(false);
 
   useEffect(() => {
     const processPayment = async () => {
-      if (!user) {
-        // Wait for user to load
+      if (!user || hasProcessedRef.current) {
+        // Wait for user to load or skip if already processed
         return;
       }
+      hasProcessedRef.current = true;
       
       try {
         const plan = searchParams?.get('plan');

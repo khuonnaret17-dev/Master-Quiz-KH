@@ -1,6 +1,6 @@
 'use client';
 
-
+export const dynamic = 'force-dynamic';
 
 import { useParams, useSearchParams } from 'next/navigation';
 import { useFirebase } from '@/lib/FirebaseProvider';
@@ -33,37 +33,203 @@ function MinistryDetailContent() {
     setIsDownloadingPdf(true);
     setPdfCategory(categoryPath);
     
+    // Give React time to re-render the template with the chosen category
     setTimeout(async () => {
       try {
+        // Ensure web fonts are completely loaded for crystal-clear glyph rendering
+        if (typeof document !== 'undefined' && document.fonts) {
+          await document.fonts.ready;
+        }
+
         const element = document.getElementById('pdf-print-template');
         if (!element) throw new Error("Template not found");
-        
-        const { toJpeg } = await import('html-to-image');
-        const { jsPDF } = await import('jspdf');
 
-        const imgData = await toJpeg(element, {
-          quality: 0.95,
-          pixelRatio: 2,
-          backgroundColor: '#ffffff'
-        });
+        // Workaround for html-to-image bug (Cannot read properties of undefined (reading 'split'))
+        // Ensures all child elements have a defined style.fontFamily to prevent the internal font parser from crashing
+        const ensureFontFamily = (el: HTMLElement) => {
+          if (!el.style.fontFamily) {
+            try {
+              const comp = window.getComputedStyle(el);
+              el.style.fontFamily = (comp && comp.fontFamily) ? comp.fontFamily : 'sans-serif';
+            } catch {
+              el.style.fontFamily = 'sans-serif';
+            }
+          }
+          Array.from(el.children).forEach(child => {
+            if (child instanceof HTMLElement) ensureFontFamily(child);
+          });
+        };
+        ensureFontFamily(element);
         
+        // Capture at 3x ultra-sharp resolution (equivalent to ~300 DPI high-grade print)
+        const { toCanvas, toPng } = await import('html-to-image');
+        let fullCanvas: HTMLCanvasElement;
+        try {
+          fullCanvas = await toCanvas(element, {
+            pixelRatio: 3,
+            backgroundColor: '#ffffff',
+            cacheBust: true,
+          });
+        } catch (canvasErr) {
+          console.warn("toCanvas fallback to toPng:", canvasErr);
+          const pngUrl = await toPng(element, {
+            pixelRatio: 3,
+            backgroundColor: '#ffffff',
+            cacheBust: true,
+          });
+          fullCanvas = await new Promise<HTMLCanvasElement>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+              const c = document.createElement('canvas');
+              c.width = img.width;
+              c.height = img.height;
+              const ctx = c.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0);
+                resolve(c);
+              } else {
+                reject(new Error("Failed to get 2d context"));
+              }
+            };
+            img.onerror = reject;
+            img.src = pngUrl;
+          });
+        }
+
+        const elementWidth = element.offsetWidth || 794;
+        const totalHeight = element.offsetHeight;
+        const scale = fullCanvas.width / elementWidth; // 3x scale factor
+
+        // Standard A4 dimensions at 794px width (ratio 297/210 ≈ 1.414): 1123px height
+        const A4_HEIGHT_PX = 1123;
+        const targetPageWidth = Math.round(794 * scale);
+        const targetPageHeight = Math.round(A4_HEIGHT_PX * scale);
+
+        // Find question card elements to avoid slicing questions across page breaks
+        const cards = Array.from(element.querySelectorAll<HTMLElement>('.pdf-quiz-card'));
+        const cardBoxes = cards.map(c => ({
+          top: c.offsetTop,
+          bottom: c.offsetTop + c.offsetHeight,
+          height: c.offsetHeight
+        }));
+
+        // Calculate intelligent page cuts along question card gaps
+        const cuts: number[] = [0];
+        let currentTop = 0;
+
+        while (currentTop < totalHeight) {
+          const isFirstPage = cuts.length === 1;
+          const availableHeight = isFirstPage ? 1060 : 1020;
+          const targetBottom = currentTop + availableHeight;
+
+          if (targetBottom >= totalHeight) {
+            cuts.push(totalHeight);
+            break;
+          }
+
+          // Find the last card that fits completely before targetBottom
+          let bestCut = -1;
+          for (let i = 0; i < cardBoxes.length; i++) {
+            const box = cardBoxes[i];
+            const nextTop = i + 1 < cardBoxes.length ? cardBoxes[i + 1].top : totalHeight;
+            if (box.bottom <= targetBottom && box.bottom > currentTop) {
+              bestCut = Math.round((box.bottom + nextTop) / 2);
+            }
+          }
+
+          if (bestCut > currentTop) {
+            cuts.push(bestCut);
+            currentTop = bestCut;
+          } else {
+            cuts.push(targetBottom);
+            currentTop = targetBottom;
+          }
+        }
+
+        const totalPages = cuts.length - 1;
+        const { jsPDF } = await import('jspdf');
         const pdf = new jsPDF({
-          orientation: 'p',
-          unit: 'px',
-          format: [element.offsetWidth, element.offsetHeight]
+          orientation: 'portrait',
+          unit: 'mm',
+          format: 'a4',
+          compress: true
         });
-        
-        pdf.addImage(imgData, 'JPEG', 0, 0, element.offsetWidth, element.offsetHeight);
+
+        for (let p = 0; p < totalPages; p++) {
+          const sliceTop = cuts[p];
+          const sliceBottom = cuts[p + 1];
+          const sliceHeight = sliceBottom - sliceTop;
+
+          const pageCanvas = document.createElement('canvas');
+          pageCanvas.width = targetPageWidth;
+          pageCanvas.height = targetPageHeight;
+          const ctx = pageCanvas.getContext('2d');
+          if (!ctx) continue;
+
+          // Pure white background
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, targetPageWidth, targetPageHeight);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+
+          // On page 1 start at 0, on subsequent pages add top margin
+          const destY = p === 0 ? 0 : Math.round(36 * scale);
+
+          ctx.drawImage(
+            fullCanvas,
+            0,
+            Math.round(sliceTop * scale),
+            fullCanvas.width,
+            Math.round(sliceHeight * scale),
+            0,
+            destY,
+            fullCanvas.width,
+            Math.round(sliceHeight * scale)
+          );
+
+          // Draw crisp professional A4 page footer with divider line and page numbering
+          const footerY = Math.round((A4_HEIGHT_PX - 22) * scale);
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 1 * scale;
+          ctx.beginPath();
+          ctx.moveTo(Math.round(48 * scale), footerY);
+          ctx.lineTo(Math.round((794 - 48) * scale), footerY);
+          ctx.stroke();
+
+          ctx.fillStyle = '#64748b';
+          ctx.font = `${Math.round(9 * scale)}px 'Kantumruy Pro', 'Battambang', sans-serif`;
+          ctx.textAlign = 'left';
+          ctx.fillText(
+            `${ministry.khmerName} • កម្រងវិញ្ញាសាត្រៀមប្រឡងក្របខ័ណ្ឌរដ្ឋ`,
+            Math.round(48 * scale),
+            footerY + Math.round(14 * scale)
+          );
+
+          ctx.textAlign = 'right';
+          ctx.fillText(
+            `ទំព័រទី ${p + 1} នៃ ${totalPages}`,
+            Math.round((794 - 48) * scale),
+            footerY + Math.round(14 * scale)
+          );
+
+          if (p > 0) {
+            pdf.addPage('a4', 'portrait');
+          }
+
+          const pageImgData = pageCanvas.toDataURL('image/png');
+          pdf.addImage(pageImgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+        }
+
         const suffix = categoryPath ? `_${categoryPath.replace(/\s+/g, '_').replace(/\//g, '-')}` : '';
         pdf.save(`Vignasa_${ministry.khmerName.replace(/\s+/g, '_')}${suffix}.pdf`);
       } catch (err) {
-        console.error(err);
-        alert("បរាជ័យក្នុងការទាញយក PDF។");
+        console.error("PDF generation error:", err);
+        alert("បរាជ័យក្នុងការទាញយក PDF។ សូមព្យាយាមម្ដងទៀត។");
       } finally {
         setIsDownloadingPdf(false);
         setPdfCategory(null);
       }
-    }, 200); // give react time to re-render the template
+    }, 250);
   };
 
   const ministry = ministries.find(m => m.id === id);
@@ -215,18 +381,22 @@ function MinistryDetailContent() {
                 </p>
               </div>
               
-              {userRole === 'ADMIN' && (
+              {(userRole === 'ADMIN' || isPremium || !isBlocked) && (
                 <button
                   onClick={() => handleDownloadPdf(null)}
                   disabled={isDownloadingPdf}
-                  className="inline-flex items-center justify-center px-4 py-2 bg-blue-600/80 hover:bg-blue-600 text-white text-sm font-bold rounded-xl backdrop-blur-md border border-blue-500/30 transition-all shadow-lg hover:shadow-blue-500/20 disabled:opacity-50"
+                  className="inline-flex items-center justify-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl backdrop-blur-md border border-blue-400/30 transition-all shadow-lg hover:shadow-blue-500/20 disabled:opacity-50 gap-2"
+                  title="ទាញយកវិញ្ញាសាទាំងអស់ជាឯកសារ PDF កម្រិតច្បាស់ខ្ពស់"
                 >
-                  {isDownloadingPdf ? (
-                    <span className="animate-pulse">កំពុងទាញយក...</span>
+                  {isDownloadingPdf && !pdfCategory ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>កំពុងទាញយក PDF កម្រិតច្បាស់...</span>
+                    </>
                   ) : (
                     <>
-                      <Download className="w-4 h-4 mr-2" />
-                      ទាញយកជា PDF
+                      <Download className="w-4 h-4" />
+                      <span>ទាញយកជា PDF (កម្រិតច្បាស់)</span>
                     </>
                   )}
                 </button>
@@ -314,13 +484,14 @@ function MinistryDetailContent() {
 
           {/* Content */}
           <main className="max-w-5xl mx-auto px-6 py-8" style={{ backgroundColor: '#d4cda8' }}>
-            <AnimatePresence mode="wait">
+            <AnimatePresence initial={false}>
               {!isPremium && ['MCQ', 'QA', 'VOCABULARY'].includes(activeTab) ? (
                 <motion.div
                   key="premium-blocked"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
                   className="max-w-xl mx-auto p-8 md:p-12 text-center rounded-[2rem] bg-white border-2 border-[#D4AF37]/50 shadow-2xl relative overflow-hidden"
                 >
                   <div className="w-20 h-20 mx-auto rounded-3xl bg-amber-500/10 flex items-center justify-center text-amber-500 border border-amber-500/20 mb-6 shadow-inner">
@@ -342,9 +513,10 @@ function MinistryDetailContent() {
               ) : selectedCategory && activeTab !== 'DOCUMENTS' ? (
                 <motion.div
                   key="quiz"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
                 >
                   <QuizView 
                     ministry={ministry}
@@ -360,9 +532,10 @@ function MinistryDetailContent() {
               ) : activeTab === 'DOCUMENTS' ? (
                 <motion.div
                   key="documents"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
                   className="space-y-6"
                 >
                   <WebDocumentView ministry={ministry} documents={documents} />
@@ -370,9 +543,10 @@ function MinistryDetailContent() {
               ) : activeTab === 'INFO' ? (
                 <motion.div
                   key="info"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
                   className="grid grid-cols-1 lg:grid-cols-3 gap-12"
                 >
                   <div className="lg:col-span-3 space-y-8">
@@ -390,9 +564,10 @@ function MinistryDetailContent() {
               ) : (
                 <motion.div
                   key={activeTab}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
                   className="space-y-6"
                 >
                   <div className="flex items-center justify-between mb-2">
@@ -434,23 +609,22 @@ function MinistryDetailContent() {
                               <ChevronRight className="w-4 h-4 text-blue-400 group-hover:translate-x-1 transition-transform" />
                             </button>
                             
-                            {userRole === 'ADMIN' && (
+                            {(userRole === 'ADMIN' || isPremium || !isBlocked) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDownloadPdf(node.fullPath);
                                 }}
                                 disabled={isDownloadingPdf}
-                                className="inline-flex items-center justify-center px-4 py-2 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold rounded-xl transition-colors disabled:opacity-50 border border-slate-200 hover:border-blue-200 w-full sm:w-auto mt-2 sm:mt-0"
+                                className="inline-flex items-center justify-center px-4 py-2 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-600 text-sm font-bold rounded-xl transition-colors disabled:opacity-50 border border-slate-200 hover:border-blue-200 w-full sm:w-auto mt-2 sm:mt-0 gap-1.5"
+                                title="ទាញយកវិញ្ញាសាផ្នែកនេះជា PDF កម្រិតច្បាស់"
                               >
                                 {isDownloadingPdf && pdfCategory === node.fullPath ? (
-                                  <span className="animate-pulse">...</span>
+                                  <span className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                                 ) : (
-                                  <>
-                                    <Download className="w-4 h-4 mr-2" />
-                                    PDF
-                                  </>
+                                  <Download className="w-4 h-4" />
                                 )}
+                                <span>PDF</span>
                               </button>
                             )}
                           </div>
@@ -475,63 +649,91 @@ function MinistryDetailContent() {
 
       {/* Dynamic Off-screen High-Fidelity Printable Template with native browser layout capability */}
       {ministry && ministry.quizzes && (
-        <div className="absolute left-[-9999px] top-0 pointer-events-none select-none z-[-1]" style={{ width: "794px" }}>
-          <div id="pdf-print-template" style={{ width: "794px", fontFamily: "\"Times New Roman\", var(--font-khmer), sans-serif", color: "#111827", backgroundColor: "#ffffff", padding: "48px", textAlign: "left" }}>
+        <div style={{ position: "fixed", top: 0, left: "-9999px", width: "794px", pointerEvents: "none", zIndex: -999, backgroundColor: "#ffffff" }}>
+          <div 
+            id="pdf-print-template" 
+            style={{ 
+              width: "794px", 
+              fontFamily: "'Kantumruy Pro', 'Battambang', 'Siemreap', 'Khmer OS', system-ui, sans-serif", 
+              color: "#0f172a", 
+              backgroundColor: "#ffffff", 
+              padding: "48px 48px 36px 48px", 
+              textAlign: "left",
+              WebkitFontSmoothing: "antialiased",
+              MozOsxFontSmoothing: "grayscale",
+              textRendering: "optimizeLegibility"
+            }}
+          >
             {/* Cambodian Traditional Royal Header */}
-            <div style={{ textAlign: "center", marginBottom: "32px" }}>
-              <h3 style={{ fontSize: "18px", fontWeight: "bold", letterSpacing: "0.025em", margin: "0 0 6px 0", fontFamily: "\"Times New Roman\", var(--font-khmer)", color: "#111827" }}>ព្រះរាជាណាចក្រកម្ពុជា</h3>
-              <h4 style={{ fontSize: "14px", fontWeight: "600", letterSpacing: "0.05em", margin: "0 0 8px 0", fontFamily: "\"Times New Roman\", var(--font-khmer)", color: "#374151" }}>ជាតិ សាសនា ព្រះមហាក្សត្រ</h4>
+            <div style={{ textAlign: "center", marginBottom: "28px" }}>
+              <h3 style={{ fontSize: "17px", fontWeight: "bold", letterSpacing: "0.02em", margin: "0 0 6px 0", fontFamily: "'Moul', 'Kantumruy Pro', 'Battambang', sans-serif", color: "#0f172a" }}>ព្រះរាជាណាចក្រកម្ពុជា</h3>
+              <h4 style={{ fontSize: "13.5px", fontWeight: "600", letterSpacing: "0.04em", margin: "0 0 8px 0", fontFamily: "'Moul', 'Kantumruy Pro', 'Battambang', sans-serif", color: "#334155" }}>ជាតិ សាសនា ព្រះមហាក្សត្រ</h4>
               {/* Double traditional Cambodian wavy divider or dotted separator */}
               <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "6px", paddingTop: "4px" }}>
-                <span style={{ width: "6px", height: "6px", backgroundColor: "#111827", borderRadius: "50%", display: "inline-block" }} />
-                <span style={{ width: "56px", height: "1px", backgroundColor: "#64748b", display: "inline-block" }} />
-                <span style={{ width: "6px", height: "6px", backgroundColor: "#111827", borderRadius: "50%", display: "inline-block" }} />
+                <span style={{ width: "6px", height: "6px", backgroundColor: "#094C72", borderRadius: "50%", display: "inline-block" }} />
+                <span style={{ width: "64px", height: "1.5px", backgroundColor: "#094C72", display: "inline-block" }} />
+                <span style={{ width: "6px", height: "6px", backgroundColor: "#094C72", borderRadius: "50%", display: "inline-block" }} />
               </div>
             </div>
 
             {/* Ministry Specific Information Section */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #cbd5e1", paddingBottom: "16px", marginBottom: "24px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1.5px solid #094C72", paddingBottom: "14px", marginBottom: "22px" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <h2 style={{ fontSize: "16px", fontWeight: "bold", color: "#094C72", margin: 0, fontFamily: "\"Times New Roman\", var(--font-khmer)" }}>{ministry.khmerName}</h2>
-                <p style={{ fontSize: "10px", color: "#64748b", fontFamily: "monospace", letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>{ministry.name}</p>
+                <h2 style={{ fontSize: "17px", fontWeight: "bold", color: "#094C72", margin: 0, fontFamily: "'Moul', 'Kantumruy Pro', 'Battambang', sans-serif" }}>{ministry.khmerName}</h2>
+                <p style={{ fontSize: "11px", color: "#64748b", fontFamily: "sans-serif", letterSpacing: "0.05em", textTransform: "uppercase", margin: 0, fontWeight: "600" }}>{ministry.name}</p>
               </div>
-              <div style={{ fontSize: "10px", color: "#94a3b8", fontFamily: "monospace", fontWeight: "bold" }}>
+              <div style={{ fontSize: "11px", color: "#094C72", fontWeight: "bold", backgroundColor: "#eff6ff", padding: "4px 10px", borderRadius: "8px", border: "1px solid #bfdbfe", fontFamily: "monospace" }}>
                 ID: {ministry.id.toUpperCase()}
               </div>
             </div>
 
             {/* Main Worksheet Title */}
-            <div style={{ textAlign: "center", marginBottom: "40px" }}>
-              <h1 style={{ fontSize: "20px", fontWeight: "800", color: "#094C72", margin: "0 0 6px 0", fontFamily: "\"Times New Roman\", var(--font-khmer)" }}>
+            <div style={{ textAlign: "center", marginBottom: "32px", backgroundColor: "#f8fafc", padding: "16px 20px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
+              <h1 style={{ fontSize: "18px", fontWeight: "bold", color: "#094C72", margin: "0 0 6px 0", fontFamily: "'Moul', 'Kantumruy Pro', sans-serif" }}>
                 សន្លឹកកិច្ចការ និងកម្រងវិញ្ញាសាត្រៀមប្រឡងក្របខ័ណ្ឌរដ្ឋ
               </h1>
-              <p style={{ fontSize: "12px", color: "#64748b", fontWeight: "500", margin: 0 }}>
+              <p style={{ fontSize: "12px", color: "#475569", fontWeight: "500", margin: 0, fontFamily: "'Kantumruy Pro', sans-serif" }}>
                 ឯកសារសិក្សាផ្លូវការ (Official Civil Service Practice Workbook)
               </p>
             </div>
 
             {/* Quizzes Wrapper */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
               {pdfQuizzes.map((quiz, idx) => (
-                <div key={idx} style={{ padding: "24px", borderRadius: "16px", border: "1px solid #e2e8f0", backgroundColor: "#f8fafc", marginBottom: "24px", display: "block" }}>
+                <div 
+                  key={idx} 
+                  className="pdf-quiz-card"
+                  style={{ 
+                    padding: "22px 24px", 
+                    borderRadius: "16px", 
+                    border: "1.5px solid #e2e8f0", 
+                    backgroundColor: "#f8fafc", 
+                    marginBottom: "20px", 
+                    display: "block",
+                    pageBreakInside: "avoid",
+                    breakInside: "avoid"
+                  }}
+                >
                   {/* Question header */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid #f1f5f9", paddingBottom: "8px", marginBottom: "16px" }}>
-                    <span style={{ padding: "4px 12px", backgroundColor: "#094C72", color: "#ffffff", fontSize: "10px", fontWeight: "bold", borderRadius: "8px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      សំណួរទី {idx + 1}
-                    </span>
-                    <span style={{ fontSize: "10px", color: "#94a3b8", fontWeight: "bold", textTransform: "uppercase", letterSpacing: "0.05em", fontFamily: "monospace" }}>
-                      Category: {quiz.category || "General"}
-                    </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #e2e8f0", paddingBottom: "10px", marginBottom: "14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ padding: "4px 12px", backgroundColor: "#094C72", color: "#ffffff", fontSize: "11px", fontWeight: "bold", borderRadius: "8px", letterSpacing: "0.02em", fontFamily: "'Kantumruy Pro', sans-serif" }}>
+                        សំណួរទី {idx + 1}
+                      </span>
+                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: "600", fontFamily: "'Kantumruy Pro', sans-serif" }}>
+                        ផ្នែក៖ {quiz.category || "ទូទៅ"}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Question */}
-                  <p style={{ fontSize: "14px", fontWeight: "bold", lineHeight: "1.6", color: "#111827", margin: "0 0 16px 0", fontFamily: "\"Times New Roman\", var(--font-khmer)" }}>
+                  <p style={{ fontSize: "14.5px", fontWeight: "bold", lineHeight: "1.7", color: "#0f172a", margin: "0 0 16px 0", fontFamily: "'Kantumruy Pro', 'Battambang', sans-serif" }}>
                     {quiz.question}
                   </p>
 
                   {/* Options */}
                   {quiz.options && (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "12px", paddingLeft: "8px", paddingTop: "4px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px", paddingLeft: "2px", paddingTop: "2px" }}>
                       {Object.entries(quiz.options).map(([key, val]) => {
                         const isCorrect = key === quiz.correctAnswer;
                         return (
@@ -541,24 +743,24 @@ function MinistryDetailContent() {
                               display: "flex",
                               alignItems: "start",
                               gap: "10px",
-                              padding: "12px",
-                              borderRadius: "12px",
-                              border: isCorrect ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                              padding: "10px 12px",
+                              borderRadius: "10px",
+                              border: isCorrect ? "1.5px solid #22c55e" : "1px solid #e2e8f0",
                               backgroundColor: isCorrect ? "#f0fdf4" : "#ffffff",
-                              color: isCorrect ? "#166534" : "#475569",
-                              fontSize: "12px",
-                              lineHeight: "1.5"
+                              color: isCorrect ? "#15803d" : "#334155",
+                              fontSize: "12.5px",
+                              lineHeight: "1.6"
                             }}
                           >
                             <span style={{
-                              width: "20px",
-                              height: "20px",
+                              width: "22px",
+                              height: "22px",
                               borderRadius: "6px",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
                               fontWeight: "bold",
-                              fontSize: "10px",
+                              fontSize: "11px",
                               flexShrink: 0,
                               border: isCorrect ? "1px solid #22c55e" : "1px solid #cbd5e1",
                               backgroundColor: isCorrect ? "#22c55e" : "#f1f5f9",
@@ -566,7 +768,7 @@ function MinistryDetailContent() {
                             }}>
                               {key.toUpperCase()}
                             </span>
-                            <span style={{ fontFamily: "\"Times New Roman\", var(--font-khmer)" }}>{val}</span>
+                            <span style={{ fontFamily: "'Kantumruy Pro', 'Battambang', sans-serif", fontWeight: isCorrect ? "600" : "normal" }}>{val}</span>
                           </div>
                         );
                       })}
@@ -574,19 +776,19 @@ function MinistryDetailContent() {
                   )}
 
                   {/* Answer & Explanation */}
-                  <div style={{ paddingTop: "10px", marginTop: "10px", borderTop: "1px dashed #cbd5e1" }}>
+                  <div style={{ paddingTop: "12px", marginTop: "14px", borderTop: "1px dashed #cbd5e1" }}>
                     {quiz.answer && (
-                      <div style={{ fontSize: "12px", fontWeight: "semibold", color: "#15803d", display: "flex", alignItems: "center", gap: "6px", fontFamily: "\"Times New Roman\", var(--font-khmer)", marginBottom: "8px" }}>
-                        <span>✓ ចម្លើយដោះស្រាយ៖</span>
-                        <span style={{ color: "#1e293b", fontWeight: "bold", marginLeft: "4px" }}>{quiz.answer}</span>
+                      <div style={{ fontSize: "13px", fontWeight: "600", color: "#166534", display: "flex", alignItems: "flex-start", gap: "6px", fontFamily: "'Kantumruy Pro', 'Battambang', sans-serif", marginBottom: "8px" }}>
+                        <span style={{ color: "#16a34a", fontWeight: "bold" }}>✓ ចម្លើយដោះស្រាយ៖</span>
+                        <span style={{ color: "#0f172a", fontWeight: "bold", marginLeft: "4px" }}>{quiz.answer}</span>
                       </div>
                     )}
                     {quiz.explanation && (
-                      <div style={{ padding: "16px", borderRadius: "12px", backgroundColor: "#fffbeb", border: "1px solid #fef3c7", fontSize: "12px", color: "#78350f", lineHeight: "1.5", marginTop: "12px" }}>
-                        <div style={{ fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px", color: "#92400e", marginBottom: "4px" }}>
+                      <div style={{ padding: "14px 16px", borderRadius: "12px", backgroundColor: "#fffbeb", border: "1px solid #fef3c7", fontSize: "12px", color: "#78350f", lineHeight: "1.6", marginTop: "10px" }}>
+                        <div style={{ fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px", color: "#92400e", marginBottom: "4px", fontFamily: "'Kantumruy Pro', sans-serif" }}>
                           <span>💡 ការពន្យល់ / គន្លឹះដោះស្រាយ ៖</span>
                         </div>
-                        <p style={{ margin: 0, paddingLeft: "4px", fontFamily: "\"Times New Roman\", var(--font-khmer)" }}>{quiz.explanation}</p>
+                        <p style={{ margin: 0, paddingLeft: "4px", fontFamily: "'Kantumruy Pro', 'Battambang', sans-serif" }}>{quiz.explanation}</p>
                       </div>
                     )}
                   </div>
@@ -595,9 +797,9 @@ function MinistryDetailContent() {
             </div>
 
             {/* PDF print Footer */}
-            <div style={{ marginTop: "48px", paddingTop: "24px", borderTop: "1px solid #cbd5e1", textAlign: "center", fontSize: "10px", color: "#94a3b8", fontFamily: "sans-serif", letterSpacing: "0.025em" }}>
-              <p style={{ margin: "0 0 4px 0" }}>© រក្សាសិទ្ធិគ្រប់យ៉ាងដោយ Cambodia Ministry Hub & Co.</p>
-              <p style={{ margin: "0" }}>សិទ្ធិត្រូវបានបើកជូន៖ MEMBER ({user?.email}) • ឯកសារសិក្សាទាញយកដោយឥតគិតថ្លៃ ១០០%</p>
+            <div style={{ marginTop: "40px", paddingTop: "20px", borderTop: "1px solid #cbd5e1", textAlign: "center", fontSize: "11px", color: "#64748b", fontFamily: "'Kantumruy Pro', sans-serif" }}>
+              <p style={{ margin: "0 0 4px 0" }}>© រក្សាសិទ្ធិគ្រប់យ៉ាងដោយ Cambodia Ministry Hub</p>
+              <p style={{ margin: "0" }}>សិទ្ធិត្រូវបានបើកជូន៖ MEMBER ({user?.email || "សិស្ស/និស្សិត"}) • ឯកសារសិក្សាទាញយកដោយឥតគិតថ្លៃ ១០០%</p>
             </div>
           </div>
         </div>

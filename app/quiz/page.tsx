@@ -2,7 +2,7 @@
 
 
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useFirebase } from '@/lib/FirebaseProvider';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, XCircle, ArrowLeft, RotateCcw, Trophy, Brain } from 'lucide-react';
@@ -15,10 +15,11 @@ export default function QuizPage() {
   const [showResult, setShowResult] = useState(false);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
+  const [quizSeed, setQuizSeed] = useState(0);
 
-  // Generate a quiz from ministries data
-  const generateQuizzes = () => {
-    if (ministries.length < 4) return [];
+  // Generate a quiz from ministries data - memoized so options don't reshuffle on answer selection
+  const quizzes = useMemo(() => {
+    if (ministries.length < 4 || quizSeed < 0) return [];
     
     return ministries.slice(0, 5).map((m, i) => {
       const isKhmerQuestion = i % 2 === 0;
@@ -34,20 +35,16 @@ export default function QuizPage() {
         explanation: `${m.khmerName} is ${m.name}.`
       };
     });
-  };
-
-  const quizzes = generateQuizzes();
+  }, [ministries, quizSeed]);
 
   const handleAnswer = (index: number) => {
     if (isAnswered) return;
     setSelectedOption(index);
     setIsAnswered(true);
-    if (index === quizzes[currentStep].correctIndex) {
+    if (index === quizzes[currentStep]?.correctIndex) {
       setScore(score + 1);
     }
   };
-
-  console.log('DEBUG: Quiz Page', { user, isPremium, userRole });
 
   const nextQuestion = () => {
     if (currentStep < quizzes.length - 1) {
@@ -65,6 +62,7 @@ export default function QuizPage() {
     setShowResult(false);
     setSelectedOption(null);
     setIsAnswered(false);
+    setQuizSeed(s => s + 1);
   };
 
   const isBlocked = !user || (!isPremium && userRole !== 'ADMIN');
@@ -150,7 +148,21 @@ export default function QuizPage() {
     );
   }
 
-  if (quizzes.length === 0) return <div>Not enough data for quiz.</div>;
+  if (quizzes.length === 0) {
+    return (
+      <div className="min-h-screen bg-transparent flex items-center justify-center p-6">
+        <div className="max-w-md w-full text-center bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+          <Brain className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+          <h2 className="text-xl font-black text-slate-800 mb-2 font-khmer">មិនទាន់មានទិន្នន័យគ្រប់គ្រាន់សម្រាប់វិញ្ញាសាតេស្តទេ</h2>
+          <p className="text-sm text-slate-500 mb-6 font-khmer">ត្រូវការទិន្នន័យស្ថាប័នយ៉ាងតិច ៤ ដើម្បីបង្កើតសំណួរពហុជ្រើសរើស។</p>
+          <Link href="/" className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#094C72] text-white font-bold rounded-xl text-xs font-khmer hover:bg-[#073652] transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            ត្រឡប់ទៅទំព័រដើម
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-transparent p-6 md:p-12">
