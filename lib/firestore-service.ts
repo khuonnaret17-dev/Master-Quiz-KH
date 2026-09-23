@@ -229,6 +229,32 @@ export const firestoreService = {
     }
   },
 
+  async updateLastPlayed(userId: string, lastPlayed: { ministryId: string; category: string; lastPlayedAt: string; type: string }) {
+    if (userId.startsWith('custom_')) {
+      const username = userId.replace(/^custom_/, '');
+      const userRef = doc(db, 'custom_users', username.toLowerCase());
+      try {
+        await setDoc(userRef, { 
+          lastPlayed,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (error) {
+        console.warn('Could not update lastPlayed for custom user:', error);
+      }
+      return;
+    }
+
+    const userRef = doc(db, USERS_COLLECTION, userId);
+    try {
+      await setDoc(userRef, { 
+        lastPlayed,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (error) {
+      console.warn('Could not update lastPlayed:', error);
+    }
+  },
+
   async testConnection() {
     try {
       // Use a known path or a dummy one just to probe connection

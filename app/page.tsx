@@ -4,7 +4,7 @@
 
 import { motion } from "motion/react";
 import { useFirebase } from "@/lib/FirebaseProvider";
-import { Search, Info, AlertCircle, LogIn, CheckCircle2, User, Lock, X, History } from "lucide-react";
+import { Search, Info, AlertCircle, LogIn, CheckCircle2, User, Lock, X, History, Heart } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 
@@ -213,6 +213,15 @@ export default function Home() {
                   </Link>
                 </motion.div>
               )}
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Link 
+                  href="/favorites"
+                  className="flex items-center gap-2 px-4 py-2 md:px-5 md:py-2.5 bg-white/10 border border-white/20 rounded-2xl text-white hover:bg-white/20 transition-all shadow-md font-black text-xs md:text-sm font-khmer"
+                >
+                  <Heart className="w-4 h-4" />
+                  <span className="hidden sm:inline">ចូលចិត្ត</span>
+                </Link>
+              </motion.div>
               <div className="text-white relative z-50 flex-shrink-0">
                 <UserNav />
               </div>

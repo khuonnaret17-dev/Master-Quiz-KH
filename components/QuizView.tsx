@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
-import { ChevronLeft, ChevronRight, Award, HelpCircle, CheckCircle2, XCircle, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Award, HelpCircle, CheckCircle2, XCircle, Sparkles, Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import SafeImage from '@/components/SafeImage';
@@ -10,7 +10,7 @@ import { Ministry, Quiz, QuizType } from '@/lib/types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { CategorySection } from '@/components/WebDocumentView';
-import { generateQuizImageBlob } from '@/lib/quiz-image-generator';
+import { useFirebase } from '@/lib/FirebaseProvider';
 
 interface QuizViewProps {
   ministry: Ministry;
@@ -21,6 +21,7 @@ interface QuizViewProps {
 }
 
 export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType, onBack, onComplete }) => {
+  const { toggleFavorite, favorites } = useFirebase();
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -32,52 +33,30 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
   const [showIntermediateResult, setShowIntermediateResult] = useState(false);
 
   const [shuffledOptions, setShuffledOptions] = useState<{ originalKey: string; value: string }[]>([]);
+  const [copyToast, setCopyToast] = useState(false);
 
   const handleShareTelegram = async () => {
     if (!currentQuiz) return;
-    setIsSharing(true);
-    try {
-      const blob = await generateQuizImageBlob(
-        {
-          question: currentQuiz.question,
-          type: quizType === 'MULTIPLE_CHOICE' ? 'mcq' : 'qa',
-          options: currentQuiz.options,
-          correctAnswer: currentQuiz.correctAnswer,
-          answer: currentQuiz.answer,
-          explanation: currentQuiz.explanation
-        },
-        {
-          khmerName: ministry.khmerName,
-          name: ministry.name,
-          logo: ministry.logo
-        }
-      );
-
-      const file = new File([blob], `Vignasa_Quiz_${currentIdx + 1}.png`, { type: 'image/png' });
-      
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    
+    // Create a simplified text representation of the question
+    const shareText = `សំណួរទី ${currentIdx + 1}: ${currentQuiz.question}\n\nវិញ្ញាសា: ${ministry.khmerName}`;
+    
+    if (navigator.share) {
+      try {
         await navigator.share({
-          files: [file],
-          title: 'Vignasa Quiz Share',
-          text: `សំណួរទី ${currentIdx + 1}: ${currentQuiz.question}`
+          title: 'សំណួរត្រៀមប្រឡង',
+          text: shareText,
         });
-      } else {
-        // Fallback: Download the image
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Vignasa_Quiz_${currentIdx + 1}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        alert("រូបភាពត្រូវបានរក្សាទុក! អ្នកអាចផ្ញើវាទៅកាន់ Telegram បាន។");
+      } catch (err) {
+        console.error("Sharing failed:", err);
       }
-    } catch (err) {
-      console.error("Sharing failed:", err);
-      alert("បរាជ័យក្នុងការចែករំលែករូបភាព។");
-    } finally {
-      setIsSharing(false);
+    } else {
+      // Fallback: Copy to clipboard if Web Share API is not available
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(shareText);
+        setCopyToast(true);
+        setTimeout(() => setCopyToast(false), 3000);
+      }
     }
   };
 
@@ -313,10 +292,18 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
         >
           <ChevronLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" /> ត្រឡប់
         </Button>
-        <div className="px-4 md:px-6 py-2 bg-white rounded-full border shadow-sm truncate max-w-[200px] md:max-w-none" style={{ borderColor: 'rgba(27, 54, 93, 0.05)', fontFamily: 'var(--font-khmer)' }}>
-          <span className="text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-[#D4AF37]">
-            {category}
-          </span>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => toggleFavorite(currentQuiz.id)}
+            className={cn("p-2 rounded-full transition-colors", favorites.includes(currentQuiz.id) ? "text-red-500" : "text-slate-300 hover:text-red-500")}
+          >
+            <Heart className={cn("w-6 h-6", favorites.includes(currentQuiz.id) && "fill-current")} />
+          </button>
+          <div className="px-4 md:px-6 py-2 bg-white rounded-full border shadow-sm truncate max-w-[200px] md:max-w-none" style={{ borderColor: 'rgba(27, 54, 93, 0.05)', fontFamily: 'var(--font-khmer)' }}>
+            <span className="text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-[#D4AF37]">
+              {category}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -345,6 +332,12 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
                 សំណួរទី {currentIdx + 1} នៃ {quizzes.length}
               </span>
             </div>
+              <div className="w-full bg-slate-100 rounded-full h-2 mb-6">
+                <div 
+                  className="bg-[#D4AF37] h-2 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${((currentIdx + 1) / quizzes.length) * 100}%` }}
+                />
+              </div>
             <h2 className="text-2xl md:text-4xl font-bold leading-[1.3] md:leading-[1.2] text-[#f8004c] whitespace-pre-wrap">
               {currentQuiz.question}
             </h2>
@@ -561,10 +554,24 @@ export const QuizView: React.FC<QuizViewProps> = ({ ministry, category, quizType
                     </div>
                   )}
 
-                  <div className="flex justify-end items-center pt-4 md:pt-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-4 md:pt-6">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={handleShareTelegram}
+                        variant="outline"
+                        className="h-14 md:h-16 px-6 md:px-8 rounded-xl md:rounded-2xl border-2 border-sky-100 hover:border-sky-500 hover:bg-sky-50 text-sky-600 font-bold transition-all gap-3"
+                      >
+                        <span className="font-khmer">ចែករំលែកទៅ Telegram</span>
+                      </Button>
+                      {copyToast && (
+                        <span className="text-xs text-emerald-600 font-khmer bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg animate-in fade-in">
+                          បានចម្លងរួចរាល់!
+                        </span>
+                      )}
+                    </div>
                     <Button 
                       onClick={handleNext}
-                      className="h-14 md:h-16 px-8 md:px-12 rounded-xl md:rounded-2xl prestige-gradient hover:shadow-xl hover:shadow-[#1B365D]/20 text-[10px] md:text-xs font-bold uppercase tracking-widest transition-all gap-2 md:gap-3"
+                      className="h-14 md:h-16 px-8 md:px-12 rounded-xl md:rounded-2xl prestige-gradient hover:shadow-xl hover:shadow-[#1B365D]/20 text-[10px] md:text-xs font-bold uppercase tracking-widest transition-all gap-2 md:gap-3 w-full sm:w-auto"
                     >
                       {currentIdx < quizzes.length - 1 ? 'សំណួរបន្ទាប់' : 'មើលលទ្ធផល'} <ChevronRight className="h-4 w-4" />
                     </Button>

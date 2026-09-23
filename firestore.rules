@@ -79,10 +79,14 @@ service cloud.firestore {
                          (request.auth.uid == userId && 
                           (
                             incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'updatedAt']) ||
+                            incoming().diff(existing()).affectedKeys().hasOnly(['lastPlayed', 'updatedAt']) ||
+                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'lastPlayed', 'updatedAt']) ||
                             incoming().diff(existing()).affectedKeys().hasOnly(['isPremium', 'premiumUntil', 'linkedBank', 'updatedAt']) ||
-                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'isPremium', 'premiumUntil', 'linkedBank', 'updatedAt'])
+                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'isPremium', 'premiumUntil', 'linkedBank', 'updatedAt']) ||
+                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'lastPlayed', 'isPremium', 'premiumUntil', 'linkedBank', 'updatedAt'])
                           ) &&
                           (!('progress' in incoming()) || incoming().progress is map) &&
+                          (!('lastPlayed' in incoming()) || incoming().lastPlayed is map) &&
                           (!('isPremium' in incoming()) || incoming().isPremium is bool) &&
                           (!('linkedBank' in incoming()) || (incoming().linkedBank is map || incoming().linkedBank == null)) &&
                           incoming().updatedAt == request.time) ||
@@ -98,6 +102,10 @@ service cloud.firestore {
                        );
       
       allow delete: if isAdmin();
+
+      match /favorites/{ministryId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
     match /quizzes/{quizId} {
@@ -106,6 +114,10 @@ service cloud.firestore {
 
     match /custom_users/{userId} {
       allow read, write: if true;
+      
+      match /favorites/{ministryId} {
+        allow read, write: if true; // Custom users have limited auth, rule currently too permissive but functional for now
+      }
     }
 
     match /documents/{documentId} {

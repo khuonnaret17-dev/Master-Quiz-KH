@@ -91,7 +91,7 @@ function MinistryDetailContent() {
                 reject(new Error("Failed to get 2d context"));
               }
             };
-            img.onerror = reject;
+            img.onerror = () => reject(new Error("Failed to load image for canvas generation"));
             img.src = pngUrl;
           });
         }
@@ -224,7 +224,6 @@ function MinistryDetailContent() {
         pdf.save(`Vignasa_${ministry.khmerName.replace(/\s+/g, '_')}${suffix}.pdf`);
       } catch (err) {
         console.error("PDF generation error:", err);
-        alert("បរាជ័យក្នុងការទាញយក PDF។ សូមព្យាយាមម្ដងទៀត។");
       } finally {
         setIsDownloadingPdf(false);
         setPdfCategory(null);
@@ -327,8 +326,16 @@ function MinistryDetailContent() {
             type: activeTab
           }
         });
+
+        // Update 'lastPlayed' in Firestore
+        await firestoreService.updateLastPlayed(user.uid, {
+          ministryId: ministry.id!,
+          category: selectedCategory,
+          lastPlayedAt: new Date().toISOString(),
+          type: activeTab
+        });
       } catch (err) {
-        console.error("Failed to save progress:", err);
+        console.error("Failed to save progress or update last played:", err);
       }
     }
     setSelectedCategory(null);

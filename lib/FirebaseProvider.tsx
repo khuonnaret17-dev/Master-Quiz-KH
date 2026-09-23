@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { db, auth } from './firebase';
-import { collection, onSnapshot, setDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, setDoc, doc, getDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut, browserLocalPersistence, setPersistence } from 'firebase/auth';
 import { Ministry, UserRole, Progress, PdfDocument } from './types';
 import { firestoreService } from './firestore-service';
@@ -22,6 +22,7 @@ interface FirebaseContextType {
   user: User | CustomUserSession | null;
   userRole: UserRole | null;
   userProgress: Progress;
+  favorites: string[];
   isPremium: boolean;
   premiumUntil: string | null;
   linkedBank: { bankName: string; accountNumber: string; accountHolder: string; active?: boolean } | null;
@@ -34,6 +35,7 @@ interface FirebaseContextType {
   loginCustomAdmin: (password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   saveProgress: (progress: Progress) => Promise<void>;
+  toggleFavorite: (ministryId: string) => Promise<void>;
   linkBankAccount: (bankName: string, accountNumber: string, accountHolder: string, durationInMonths?: number) => Promise<void>;
   unlinkBankAccount: () => Promise<void>;
   upgradeToPremium: (durationInMonths?: number) => Promise<void>;
@@ -73,6 +75,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | CustomUserSession | null>(null);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [userProgress, setUserProgress] = useState<Progress>({});
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [isPremium, setIsPremium] = useState<boolean>(false);
   const [premiumUntil, setPremiumUntil] = useState<string | null>(null);
   const [linkedBank, setLinkedBank] = useState<{ bankName: string; accountNumber: string; accountHolder: string; active?: boolean } | null>(null);
@@ -242,6 +245,12 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
+        const unsubscribeFavorites = onSnapshot(collection(db, 'users', authUser.uid, 'favorites'), (snapshot) => {
+            const favoritesList = snapshot.docs.map(doc => doc.id);
+            setFavorites(favoritesList);
+        });
+        unsubscribeData = unsubscribeFavorites;
+
         const requestedRole = typeof window !== 'undefined' ? sessionStorage.getItem('vignasa_session_role') as UserRole : null;
         const adminAccess = typeof window !== 'undefined' ? sessionStorage.getItem('vignasa_admin_access') === 'true' : false;
         
@@ -318,7 +327,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         if (matchingUser.password === password) {
           const userObj = {
             uid: `custom_${matchingUser.username}`,
-            email: `${matchingUser.username}@vignasa.local`,
+            email: `${matchingUser.username}@master.quiz.kh.local`,
             displayName: matchingUser.username,
             photoURL: null
           };
@@ -452,7 +461,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     if (isLoggingIn) return;
     
     if (mode === 'ADMIN' && adminCode !== '5251170074') {
-      alert('លេខកូដមិនត្រឹមត្រូវ! (Invalid Admin Code)');
+      setError('លេខកូដមិនត្រឹមត្រូវ! (Invalid Admin Code)');
       return;
     }
 
@@ -515,6 +524,31 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       }
     } else {
       await firestoreService.saveProgress(user.uid, progress);
+    }
+  };
+
+  const toggleFavorite = async (ministryId: string) => {
+    if (!user) return;
+    
+    const isFavorite = favorites.includes(ministryId);
+    const userId = user.uid;
+    // For custom users, the doc ID for the user doc is username, not uid.
+    // However, in line 391, the uid is `custom_${username}`.
+    // The doc ref in line 313/372 uses username.toLowerCase().
+    // I need to be careful with the path.
+    // The current code uses user.displayName for username.
+    
+    const username = user.displayName;
+    const isCustom = user.uid.startsWith('custom_');
+    const userDocPath = isCustom ? doc(db, 'custom_users', username!.toLowerCase()) : doc(db, 'users', userId);
+    const favRef = doc(userDocPath, 'favorites', ministryId);
+
+    if (isFavorite) {
+      await deleteDoc(favRef);
+      setFavorites(prev => prev.filter(id => id !== ministryId));
+    } else {
+      await setDoc(favRef, { ministryId, createdAt: serverTimestamp() });
+      setFavorites(prev => [...prev, ministryId]);
     }
   };
 
@@ -633,6 +667,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       user, 
       userRole, 
       userProgress,
+      favorites,
       isPremium,
       premiumUntil,
       linkedBank,
@@ -645,6 +680,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       loginCustomAdmin,
       logout,
       saveProgress,
+      toggleFavorite,
       linkBankAccount,
       unlinkBankAccount,
       upgradeToPremium,

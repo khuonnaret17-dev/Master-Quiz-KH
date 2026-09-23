@@ -617,7 +617,6 @@ export default function AdminPage() {
           updateData.premiumUntil = null;
         } else if (type === 'RESET_PASSWORD') {
           if (source === 'standard') {
-             alert('ពាក្យសម្ងាត់គណនីប្រភេទនេះ អាចប្តូរបានតែដោយម្ចាស់គណនីតាមរយៈមុខងារភ្លេចលេខសម្ងាត់នៅលើទំព័រចូលប្រើប្រាស់ប៉ុណ្ណោះ។');
              setUserActionDialog(null);
              return;
           }
@@ -845,8 +844,10 @@ export default function AdminPage() {
         if (!res.ok) throw new Error((await res.json()).description);
       }
 
-      alert("ផ្ញើទៅ Telegram បានជោគជ័យ! 🎉");
-      setSendingQuiz(null);
+      setTelegramProgress("ផ្ញើទៅ Telegram បានជោគជ័យ! 🎉");
+      setTimeout(() => {
+        setSendingQuiz(null);
+      }, 1500);
     } catch (err: unknown) {
       console.error(err);
       let errorMsg = err instanceof Error ? err.message : String(err);

@@ -5,11 +5,11 @@
 import { useState, useMemo } from 'react';
 import { useFirebase } from '@/lib/FirebaseProvider';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, XCircle, ArrowLeft, RotateCcw, Trophy, Brain } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowLeft, RotateCcw, Trophy, Brain, Heart } from 'lucide-react';
 import Link from 'next/link';
 
 export default function QuizPage() {
-  const { ministries, loading, authLoading, user, userRole, isPremium } = useFirebase();
+  const { ministries, loading, authLoading, user, userRole, isPremium, favorites, toggleFavorite } = useFirebase();
   const [currentStep, setCurrentStep] = useState(0);
   const [score, setScore] = useState(0);
   const [showResult, setShowResult] = useState(false);
@@ -27,6 +27,7 @@ export default function QuizPage() {
         .sort(() => 0.5 - Math.random());
       
       return {
+        ministryId: m.id,
         question: isKhmerQuestion 
           ? `តើ " ${m.khmerName} " មានឈ្មោះជាភាសាអង់គ្លេសថាអ្វី?`
           : `Which ministry is responsible for: "${m.description}"?`,
@@ -191,9 +192,17 @@ export default function QuizPage() {
                 <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full uppercase tracking-widest">
                   Question {currentStep + 1} of {quizzes.length}
                 </span>
-                <h2 className="text-2xl font-bold text-slate-900 mt-4 leading-tight">
-                  {quizzes[currentStep].question}
-                </h2>
+                <div className="flex justify-between items-start gap-4">
+                  <h2 className="text-2xl font-bold text-slate-900 mt-4 leading-tight">
+                    {quizzes[currentStep].question}
+                  </h2>
+                  <button 
+                    onClick={() => toggleFavorite(quizzes[currentStep].ministryId)}
+                    className={`mt-4 p-2 rounded-full transition-colors ${favorites.includes(quizzes[currentStep].ministryId) ? 'text-red-500 bg-red-50' : 'text-slate-300 hover:text-red-400'}`}
+                  >
+                    <Heart className={`w-6 h-6 ${favorites.includes(quizzes[currentStep].ministryId) ? 'fill-red-500' : ''}`} />
+                  </button>
+                </div>
               </div>
 
               <div className="grid gap-4">
