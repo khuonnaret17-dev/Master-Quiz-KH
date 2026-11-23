@@ -1,6 +1,6 @@
 {
-  "name": "កម្មវិធីត្រៀមប្រឡងក្របខ័ណ្ឌ",
-  "description": "An application providing information and quizzes about various Cambodian ministries, including logos and descriptions.",
+  "name": "Master Pro Quiz KH",
+  "description": "ប្រព័ន្ធគ្រប់គ្រង និងធ្វើតេស្តសមត្ថភាពត្រៀមប្រឡងក្របខ័ណ្ឌរដ្ឋ (Master Pro Quiz KH) ជាមួយ QCM, Q&A, ពន្យល់ពាក្យ និងប្រព័ន្ធ AI",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

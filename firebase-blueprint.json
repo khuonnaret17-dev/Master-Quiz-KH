@@ -1,131 +1,125 @@
 {
   "entities": {
-    "Ministry": {
-      "title": "Ministry",
-      "description": "Information about a Cambodian Ministry",
+    "Question": {
+      "title": "Question",
+      "description": "Quiz questions for exam prep in Khmer civil service",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "khmerName": { "type": "string" },
-        "description": { "type": "string" },
-        "logo": { "type": "string", "format": "uri" },
-        "color": { "type": "string" },
-        "details": { "type": "string" },
-        "mcqs": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "category": { "type": "string" },
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "question": { "type": "string" },
-                    "options": { "type": "array", "items": { "type": "string" } },
-                    "correctIndex": { "type": "integer" },
-                    "explanation": { "type": "string" }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "shortAnswers": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "category": { "type": "string" },
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "question": { "type": "string" },
-                    "answer": { "type": "string" }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "terms": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "term": { "type": "string" },
-              "definition": { "type": "string" }
-            }
-          }
-        }
-      },
-      "required": ["id", "name", "khmerName", "logo"]
-    },
-    "Quiz": {
-      "title": "Quiz",
-      "description": "A quiz question about ministries",
-      "type": "object",
-      "properties": {
+        "subject": { "type": "string" },
         "question": { "type": "string" },
-        "options": { 
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "correctIndex": { "type": "integer" },
-        "explanation": { "type": "string" }
+        "type": { "type": "string", "enum": ["mcq", "short", "explanation"] },
+        "options": { "type": "array" },
+        "correct": { "type": "number" },
+        "answer": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "order": { "type": "number" }
       },
-      "required": ["question", "options", "correctIndex"]
+      "required": ["subject", "question", "type"]
     },
-    "Document": {
-      "title": "Document",
-      "description": "A PDF document for users to read",
+    "Subject": {
+      "title": "Subject",
+      "description": "Category/Subject entity",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "url": { "type": "string", "format": "uri" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["mcq", "short", "explanation"] },
+        "isActive": { "type": "boolean" },
+        "order": { "type": "number" }
       },
-      "required": ["id", "title", "url"]
+      "required": ["name", "type"]
     },
-    "User": {
-      "title": "User",
-      "description": "User profile and progress",
+    "Feedback": {
+      "title": "Feedback",
+      "description": "User suggestions and feedback",
       "type": "object",
       "properties": {
-        "uid": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
-        "role": { "type": "string", "enum": ["ADMIN", "MEMBER"] },
-        "progress": { "type": "object" },
-        "isPremium": { "type": "boolean" },
-        "premiumUntil": { "type": "string", "format": "date-time" },
-        "linkedBank": { "type": "object" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "username": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string" }
       },
-      "required": ["uid", "email", "role"]
+      "required": ["username", "text"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "System broadcast announcement",
+      "type": "object",
+      "properties": {
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "type": { "type": "string", "enum": ["info", "success", "warning"] }
+      },
+      "required": ["message", "timestamp"]
+    },
+    "LoginRecord": {
+      "title": "LoginRecord",
+      "description": "Access log entry",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "passwordUsed": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
+      },
+      "required": ["username", "timestamp", "role"]
+    },
+    "PresenceRecord": {
+      "title": "PresenceRecord",
+      "description": "Real-time user heartbeat",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "lastSeen": { "type": "string" }
+      },
+      "required": ["username", "role", "lastSeen"]
+    },
+    "PaidUser": {
+      "title": "PaidUser",
+      "description": "Registered paid user account with permanent access",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "paidAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "pending", "revoked"] },
+        "permanentAccess": { "type": "boolean" },
+        "transactionRef": { "type": "string" },
+        "method": { "type": "string" },
+        "note": { "type": "string" }
+      },
+      "required": ["username", "amount", "currency", "paidAt", "status", "permanentAccess"]
     }
   },
   "firestore": {
-    "ministries/{ministryId}": {
-      "schema": "Ministry",
-      "description": "Collection of Cambodian ministries"
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Collection of all test questions"
     },
-    "quizzes/{quizId}": {
-      "schema": "Quiz",
-      "description": "Collection of quizzes about ministries"
+    "/subjects/{subjectId}": {
+      "schema": "Subject",
+      "description": "Collection of test subjects"
     },
-    "documents/{documentId}": {
-      "schema": "Document",
-      "description": "Collection of PDF documents"
+    "/feedbacks/{feedbackId}": {
+      "schema": "Feedback",
+      "description": "User feedback messages"
     },
-    "users/{userId}": {
-      "schema": "User",
-      "description": "Collection of user profiles and progress"
+    "/notifications/{notificationId}": {
+      "schema": "AppNotification",
+      "description": "System broadcast notifications"
+    },
+    "/logins/{loginId}": {
+      "schema": "LoginRecord",
+      "description": "Login history records"
+    },
+    "/presence/{presenceId}": {
+      "schema": "PresenceRecord",
+      "description": "Active user heartbeat status"
+    },
+    "/paid_users/{paidUserId}": {
+      "schema": "PaidUser",
+      "description": "Collection of accounts with verified permanent access"
     }
   }
 }

@@ -1,0 +1,326 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =========================================================
+   SEMANTIC THEME TOKENS (High Contrast & Legible By Design)
+   ========================================================= */
+
+/* 1. SIMPLE LIGHT (Khmer Royal Sapphire & Gold) */
+:root,
+[data-theme="simple_light"] {
+  --theme-bg-body: #f8f7f2;
+  --theme-bg-surface: #ffffff;
+  --theme-bg-surface-sub: #f2efe6;
+  --theme-bg-hover: #e7e2d3;
+  --theme-border: #d6ceb8;
+  --theme-border-highlight: #1e3a8a;
+  --theme-text-primary: #0f172a;
+  --theme-text-secondary: #334155;
+  --theme-text-muted: #475569;
+  --theme-accent: #1e3a8a;
+  --theme-accent-hover: #172554;
+  --theme-accent-contrast: #ffffff;
+  --theme-accent-soft: #eff6ff;
+  --theme-accent-soft-text: #1e3a8a;
+  --theme-gold: #b45309;
+  --theme-nav-bg: rgba(255, 253, 248, 0.96);
+  --theme-answer-bg: #f8fafc;
+  --theme-answer-border: #cbd5e1;
+  --theme-answer-title: #1e3a8a;
+  --theme-answer-text: #0f172a;
+}
+
+/* 2. ANGKOR PAPER (Khmer Royal Silk, Sandstone & Gold — Default) */
+[data-theme="angkor_paper"] {
+  --theme-bg-body: #f7f2e6;
+  --theme-bg-surface: #fffdf8;
+  --theme-bg-surface-sub: #efe7d5;
+  --theme-bg-hover: #e5dac0;
+  --theme-border: #d5c5a3;
+  --theme-border-highlight: #9a3412;
+  --theme-text-primary: #1c1917;
+  --theme-text-secondary: #44403c;
+  --theme-text-muted: #57534e;
+  --theme-accent: #9a3412;
+  --theme-accent-hover: #7c2d12;
+  --theme-accent-contrast: #ffffff;
+  --theme-accent-soft: #fef3c7;
+  --theme-accent-soft-text: #78350f;
+  --theme-gold: #b45309;
+  --theme-nav-bg: rgba(255, 253, 248, 0.96);
+  --theme-answer-bg: #faf5e8;
+  --theme-answer-border: #d5c5a3;
+  --theme-answer-title: #92400e;
+  --theme-answer-text: #1c1917;
+}
+
+/* 3. ROYAL MIDNIGHT (Angkor Night & Gold) */
+[data-theme="royal_midnight"] {
+  --theme-bg-body: #0b1120;
+  --theme-bg-surface: #111827;
+  --theme-bg-surface-sub: #1e293b;
+  --theme-bg-hover: #293548;
+  --theme-border: #3b485e;
+  --theme-border-highlight: #f59e0b;
+  --theme-text-primary: #f8fafc;
+  --theme-text-secondary: #e2e8f0;
+  --theme-text-muted: #cbd5e1;
+  --theme-accent: #d97706;
+  --theme-accent-hover: #b45309;
+  --theme-accent-contrast: #ffffff;
+  --theme-accent-soft: rgba(245, 158, 11, 0.16);
+  --theme-accent-soft-text: #fde68a;
+  --theme-gold: #f59e0b;
+  --theme-nav-bg: rgba(17, 24, 39, 0.96);
+  --theme-answer-bg: #1e293b;
+  --theme-answer-border: #475569;
+  --theme-answer-title: #fde68a;
+  --theme-answer-text: #f8fafc;
+}
+
+/* 4. EMERALD FOREST (Deep Evergreen & Temple Gold) */
+[data-theme="emerald_forest"] {
+  --theme-bg-body: #04150f;
+  --theme-bg-surface: #0a241b;
+  --theme-bg-surface-sub: #103427;
+  --theme-bg-hover: #164434;
+  --theme-border: #1e5945;
+  --theme-border-highlight: #10b981;
+  --theme-text-primary: #f0fdf4;
+  --theme-text-secondary: #dcfce7;
+  --theme-text-muted: #bbf7d0;
+  --theme-accent: #059669;
+  --theme-accent-hover: #047857;
+  --theme-accent-contrast: #ffffff;
+  --theme-accent-soft: rgba(16, 185, 129, 0.18);
+  --theme-accent-soft-text: #a7f3d0;
+  --theme-gold: #eab308;
+  --theme-nav-bg: rgba(10, 36, 27, 0.96);
+  --theme-answer-bg: #103427;
+  --theme-answer-border: #256f56;
+  --theme-answer-title: #a7f3d0;
+  --theme-answer-text: #f0fdf4;
+}
+
+/* 5. OCEAN SAPPHIRE (Deep Navy & Crisp Gold) */
+[data-theme="ocean_sapphire"] {
+  --theme-bg-body: #061021;
+  --theme-bg-surface: #0d1d3a;
+  --theme-bg-surface-sub: #152a52;
+  --theme-bg-hover: #1d386b;
+  --theme-border: #254886;
+  --theme-border-highlight: #38bdf8;
+  --theme-text-primary: #f8fafc;
+  --theme-text-secondary: #e0f2fe;
+  --theme-text-muted: #bae6fd;
+  --theme-accent: #0284c7;
+  --theme-accent-hover: #0369a1;
+  --theme-accent-contrast: #ffffff;
+  --theme-accent-soft: rgba(14, 165, 233, 0.18);
+  --theme-accent-soft-text: #bae6fd;
+  --theme-gold: #f59e0b;
+  --theme-nav-bg: rgba(13, 29, 58, 0.96);
+  --theme-answer-bg: #152a52;
+  --theme-answer-border: #2f5aa4;
+  --theme-answer-title: #bae6fd;
+  --theme-answer-text: #f8fafc;
+}
+
+/* 6. LOTUS SAFFRON (Deep Khmer Plum & Gold) */
+[data-theme="lotus_saffron"] {
+  --theme-bg-body: #160813;
+  --theme-bg-surface: #240f20;
+  --theme-bg-surface-sub: #361730;
+  --theme-bg-hover: #492041;
+  --theme-border: #5e2a54;
+  --theme-border-highlight: #fb7185;
+  --theme-text-primary: #fff1f2;
+  --theme-text-secondary: #ffe4e6;
+  --theme-text-muted: #fecdd3;
+  --theme-accent: #e11d48;
+  --theme-accent-hover: #be123c;
+  --theme-accent-contrast: #ffffff;
+  --theme-accent-soft: rgba(244, 63, 94, 0.18);
+  --theme-accent-soft-text: #fecdd3;
+  --theme-gold: #fbbf24;
+  --theme-nav-bg: rgba(36, 15, 32, 0.96);
+  --theme-answer-bg: #361730;
+  --theme-answer-border: #733467;
+  --theme-answer-title: #fecdd3;
+  --theme-answer-text: #fff1f2;
+}
+
+@layer base {
+  body {
+    font-family: 'Kantumruy Pro', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--theme-text-primary);
+    background-color: var(--theme-bg-body);
+    overflow-x: hidden;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+/* Semantic Surface & Typography Helpers */
+.app-canvas {
+  background-color: var(--theme-bg-body);
+  color: var(--theme-text-primary);
+}
+
+.app-nav {
+  background-color: var(--theme-nav-bg);
+  border-color: var(--theme-border);
+  color: var(--theme-text-primary);
+}
+
+.app-card {
+  background-color: var(--theme-bg-surface);
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
+}
+
+.app-subcard {
+  background-color: var(--theme-bg-surface-sub);
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
+}
+
+/* Khmer Cultural Framing Helpers */
+.khmer-ornate-card {
+  background-color: var(--theme-bg-surface);
+  border: 1.5px solid color-mix(in srgb, var(--theme-gold) 55%, var(--theme-border));
+  box-shadow:
+    inset 0 0 0 3px var(--theme-bg-surface),
+    inset 0 0 0 4px color-mix(in srgb, var(--theme-gold) 28%, transparent),
+    0 8px 24px -8px color-mix(in srgb, var(--theme-accent) 12%, transparent);
+  color: var(--theme-text-primary);
+}
+
+.khmer-frame-card {
+  background-color: var(--theme-bg-surface);
+  border: 1px solid var(--theme-border);
+  box-shadow:
+    inset 0 2px 0 0 color-mix(in srgb, var(--theme-gold) 65%, transparent),
+    0 4px 14px -4px rgba(15, 23, 42, 0.06);
+  color: var(--theme-text-primary);
+}
+
+.khmer-lattice-strip {
+  background-color: color-mix(in srgb, var(--theme-gold) 88%, var(--theme-accent));
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--theme-accent) 55%, transparent) 0px,
+    color-mix(in srgb, var(--theme-accent) 55%, transparent) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+.khmer-btn-primary {
+  background-color: var(--theme-accent);
+  color: var(--theme-accent-contrast);
+  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), transform 150ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease;
+}
+
+.khmer-btn-primary:hover:not(:disabled) {
+  background-color: var(--theme-accent-hover);
+}
+
+.khmer-btn-crimson {
+  background-color: #9f1239;
+  color: #ffffff;
+  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease;
+}
+
+.khmer-btn-crimson:hover:not(:disabled) {
+  background-color: #881337;
+}
+
+.khmer-accent-text {
+  color: var(--theme-accent);
+}
+
+.khmer-gold-text {
+  color: var(--theme-gold);
+}
+
+.khmer-soft-surface {
+  background-color: var(--theme-accent-soft);
+  color: var(--theme-accent-soft-text);
+}
+
+.app-input {
+  background-color: var(--theme-bg-surface);
+  border: 1px solid var(--theme-border);
+  color: var(--theme-text-primary);
+}
+
+.app-input::placeholder {
+  color: var(--theme-text-muted);
+  opacity: 0.85;
+}
+
+.app-input:focus {
+  outline: none;
+  border-color: var(--theme-border-highlight);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent) 20%, transparent);
+}
+
+.app-answer-box {
+  background-color: var(--theme-answer-bg);
+  border: 1px solid var(--theme-answer-border);
+  color: var(--theme-answer-text);
+}
+
+.app-answer-title {
+  color: var(--theme-answer-title);
+}
+
+.app-text-primary {
+  color: var(--theme-text-primary);
+}
+
+.app-text-secondary {
+  color: var(--theme-text-secondary);
+}
+
+.app-text-muted {
+  color: var(--theme-text-muted);
+}
+
+.app-border {
+  border-color: var(--theme-border);
+}
+
+.font-moul {
+  font-family: 'Moul', cursive, serif;
+}
+
+.font-siemreap {
+  font-family: 'Siemreap', sans-serif;
+}
+
+.font-battambang {
+  font-family: 'Battambang', sans-serif;
+}
+
+.font-kantumruy {
+  font-family: 'Kantumruy Pro', sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--theme-bg-body);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--theme-border);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-accent);
+}

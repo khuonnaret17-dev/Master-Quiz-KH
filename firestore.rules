@@ -1,131 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    match /questions/{questionId} {
+      allow read, write: if true;
+    }
+
+    match /subjects/{subjectId} {
+      allow read, write: if true;
+    }
+
+    match /feedbacks/{feedbackId} {
+      allow read, write: if true;
+    }
+
+    match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
+    match /logins/{loginId} {
+      allow read, write: if true;
+    }
+
+    match /presence/{presenceId} {
+      allow read, write: if true;
+    }
+
+    match /paid_users/{paidUserId} {
+      allow read, write: if true;
+    }
+
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+
+    // Default deny for unmatched collections
     match /{document=**} {
       allow read, write: if false;
-    }
-
-    // --- Helpers ---
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isEmailVerified() {
-      return request.auth.token.email_verified == true;
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function isSystemAdmin() {
-      return isSignedIn() && 
-             request.auth.token.email == 'khuonnaret17@mekong.edu.kh';
-    }
-
-    // Role check - expensive but secure for admin operations
-    function isAdmin() {
-      return isSystemAdmin() || 
-             (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN');
-    }
-
-    // --- Validation Blueprints ---
-
-    function isValidMinistry(data) {
-      return data.keys().hasAll(['id', 'name', 'khmerName', 'logo']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.name is string && data.name.size() <= 256 &&
-             data.khmerName is string && data.khmerName.size() <= 256 &&
-             data.logo is string && data.logo.size() <= 2048;
-    }
-
-    function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'email', 'role']) &&
-             data.uid is string && data.uid.size() >= 20 &&
-             data.email is string && data.email.size() <= 256 &&
-             data.role in ['ADMIN', 'MEMBER'];
-    }
-
-    // --- Collections ---
-
-    match /ministries/{ministryId} {
-      allow read, write: if true;
-    }
-
-    match /users/{userId} {
-      allow read, write: if isSystemAdmin();
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isAdmin();
-      
-      allow create: if isSignedIn() && request.auth.uid == userId && 
-                       isValidUser(incoming()) &&
-                       (incoming().role == 'MEMBER' || (incoming().role == 'ADMIN' && isSystemAdmin())) &&
-                       incoming().createdAt == request.time &&
-                       incoming().updatedAt == request.time;
-      
-      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin()) &&
-                       (
-                         // User updating progress, premium, or linkedBank fields
-                         (request.auth.uid == userId && 
-                          (
-                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'updatedAt']) ||
-                            incoming().diff(existing()).affectedKeys().hasOnly(['lastPlayed', 'updatedAt']) ||
-                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'lastPlayed', 'updatedAt']) ||
-                            incoming().diff(existing()).affectedKeys().hasOnly(['isPremium', 'premiumUntil', 'linkedBank', 'updatedAt']) ||
-                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'isPremium', 'premiumUntil', 'linkedBank', 'updatedAt']) ||
-                            incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'lastPlayed', 'isPremium', 'premiumUntil', 'linkedBank', 'updatedAt'])
-                          ) &&
-                          (!('progress' in incoming()) || incoming().progress is map) &&
-                          (!('lastPlayed' in incoming()) || incoming().lastPlayed is map) &&
-                          (!('isPremium' in incoming()) || incoming().isPremium is bool) &&
-                          (!('linkedBank' in incoming()) || (incoming().linkedBank is map || incoming().linkedBank == null)) &&
-                          incoming().updatedAt == request.time) ||
-                         
-                         // Admin updating role or other fields
-                         (isAdmin() && incoming().updatedAt == request.time) ||
-
-                         // System Admin self-promotion sync
-                         (isSystemAdmin() && request.auth.uid == userId && 
-                          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'updatedAt']) &&
-                          incoming().role == 'ADMIN' &&
-                          incoming().updatedAt == request.time)
-                       );
-      
-      allow delete: if isAdmin();
-
-      match /favorites/{ministryId} {
-        allow read, write: if isSignedIn() && request.auth.uid == userId;
-      }
-    }
-
-    match /quizzes/{quizId} {
-      allow read, write: if true;
-    }
-
-    match /custom_users/{userId} {
-      allow read, write: if true;
-      
-      match /favorites/{ministryId} {
-        allow read, write: if true; // Custom users have limited auth, rule currently too permissive but functional for now
-      }
-    }
-
-    match /documents/{documentId} {
-      allow read: if true;
-    }
-
-    match /test/{docId} {
-      allow get: if isSignedIn();
     }
   }
 }
