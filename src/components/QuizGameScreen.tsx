@@ -12,12 +12,9 @@ import {
   Eye,
   Award,
   BookOpen,
-  Palette,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Question, AppThemeId } from '../types';
-import { getStoredTheme } from '../services/theme';
-import { ThemeSelectorModal } from './ThemeSelectorModal';
+import { Question } from '../types';
 import { SocialShareModal } from './SocialShareModal';
 import { KhmerCornerMotif, KhmerLotusCrest, KhmerLotusDivider } from './KhmerOrnaments';
 import { renderQuestionCardImage } from '../services/telegram';
@@ -60,16 +57,6 @@ export const QuizGameScreen: React.FC<QuizGameScreenProps> = ({
   const [isCompleted, setIsCompleted] = useState(false);
   const [isReviewMode, setIsReviewMode] = useState(false);
   const [shareModalMode, setShareModalMode] = useState<null | 'question' | 'result'>(null);
-  const [currentTheme, setCurrentTheme] = useState<AppThemeId>(() => getStoredTheme());
-  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
-
-  useEffect(() => {
-    const handleThemeChange = (e: any) => {
-      if (e.detail) setCurrentTheme(e.detail);
-    };
-    window.addEventListener('appthemechange', handleThemeChange);
-    return () => window.removeEventListener('appthemechange', handleThemeChange);
-  }, []);
 
   const randomizedOptionsRef = useRef<
     Record<number, { options: string[]; correctIndex: number }>
@@ -364,14 +351,6 @@ export const QuizGameScreen: React.FC<QuizGameScreenProps> = ({
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={() => setIsThemeModalOpen(true)}
-            title="ជ្រើសរើសរចនាប័ទ្មពណ៌"
-            className="p-2 rounded-xl app-card hover:opacity-80 transition cursor-pointer"
-          >
-            <Palette className="w-4 h-4 khmer-gold-text" />
-          </button>
-          <button
-            type="button"
             onClick={onToggleMute}
             title="បិទ/បើកសំឡេង"
             className="p-2 rounded-xl app-card hover:opacity-80 transition cursor-pointer"
@@ -584,14 +563,6 @@ export const QuizGameScreen: React.FC<QuizGameScreenProps> = ({
           )}
         </div>
       </div>
-
-      {/* Theme Selector Modal */}
-      <ThemeSelectorModal
-        isOpen={isThemeModalOpen}
-        onClose={() => setIsThemeModalOpen(false)}
-        currentTheme={currentTheme}
-        onThemeSelect={(t) => setCurrentTheme(t)}
-      />
 
       {shareModal}
     </div>

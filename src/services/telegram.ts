@@ -671,3 +671,15 @@ export async function getTelegramCommandBotStatus(): Promise<CommandBotStatus | 
     return null;
   }
 }
+
+export async function syncTelegramBotTemplates(templates: Record<string, any>): Promise<void> {
+  try {
+    await fetch('/api/telegram/bot/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ templates }),
+    });
+  } catch {
+    // Ignore transient network errors
+  }
+}

@@ -106,3 +106,22 @@ export interface AppThemeConfig {
     border: string;
   };
 }
+
+export interface BotActionButton {
+  label: string;
+  type: 'command' | 'url' | 'open_member_login';
+  value: string;
+}
+
+export interface BotCommandConfig {
+  command: string;
+  titleKh: string;
+  descriptionKh: string;
+  title: string;
+  body: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  actions: BotActionButton[];
+  updatedAt?: string;
+}
+

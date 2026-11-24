@@ -33,6 +33,30 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    function isValidBotCmdId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidBotCommand(data) {
+      return data.keys().hasAll(['command', 'descriptionKh', 'title', 'body', 'actions'])
+        && data.keys().hasOnly(['command', 'titleKh', 'descriptionKh', 'title', 'body', 'imageUrl', 'imageAlt', 'actions', 'updatedAt'])
+        && data.command is string && data.command.size() >= 2 && data.command.size() <= 32
+        && data.descriptionKh is string && data.descriptionKh.size() >= 1 && data.descriptionKh.size() <= 200
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 250
+        && data.body is string && data.body.size() <= 4000
+        && data.actions is list && data.actions.size() <= 10
+        && (!('titleKh' in data) || (data.titleKh is string && data.titleKh.size() <= 120))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 500))
+        && (!('imageAlt' in data) || (data.imageAlt is string && data.imageAlt.size() <= 200))
+        && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 64));
+    }
+
+    match /bot_commands/{commandId} {
+      allow read: if true;
+      allow create, update: if isValidBotCmdId(commandId) && isValidBotCommand(request.resource.data);
+      allow delete: if isValidBotCmdId(commandId);
+    }
+
     // Default deny for unmatched collections
     match /{document=**} {
       allow read, write: if false;

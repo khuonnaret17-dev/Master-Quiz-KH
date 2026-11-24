@@ -536,6 +536,54 @@ const TELEGRAM_BOT_COMMANDS = [
   { command: 'help', description: 'បង្ហាញបញ្ជី Command ទាំងអស់របស់ Bot' },
 ];
 
+interface ServerBotActionButton {
+  label: string;
+  type: 'command' | 'url' | 'open_member_login';
+  value: string;
+}
+
+interface ServerBotCommandTemplate {
+  command: string;
+  descriptionKh?: string;
+  title: string;
+  body: string;
+  imageUrl?: string;
+  actions?: ServerBotActionButton[];
+}
+
+const BOT_COMMANDS_FILE = path.resolve(__dirname, '.tg_bot_commands.json');
+
+function loadCustomBotTemplates(): Record<string, ServerBotCommandTemplate> {
+  try {
+    if (!fs.existsSync(BOT_COMMANDS_FILE)) return {};
+    const raw = fs.readFileSync(BOT_COMMANDS_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveCustomBotTemplates(templates: Record<string, ServerBotCommandTemplate>) {
+  try {
+    fs.writeFileSync(BOT_COMMANDS_FILE, JSON.stringify(templates, null, 2), { mode: 0o600 });
+  } catch {
+    // Ignore filesystem errors
+  }
+}
+
+function getEffectiveTelegramBotCommands() {
+  const custom = loadCustomBotTemplates();
+  return TELEGRAM_BOT_COMMANDS.map((c) => {
+    const ov = custom[`/${c.command}`];
+    const desc = ov?.descriptionKh?.trim();
+    return {
+      command: c.command,
+      description: desc ? desc.slice(0, 250) : c.description,
+    };
+  });
+}
+
 interface BotWorkerState {
   isRunning: boolean;
   botToken: string;
@@ -644,6 +692,49 @@ function buildTelegramBotReply(
   const openAppRow = isValidTelegramHttpsUrl(candidateUrl)
     ? [{ text: '📱 បើកកម្មវិធី Master Quiz KH', url: candidateUrl }]
     : [];
+
+  const customTemplates = loadCustomBotTemplates();
+  const custom = customTemplates[`/${normalized}`];
+  if (custom && typeof custom.title === 'string' && typeof custom.body === 'string') {
+    const customButtons: any[] = [];
+    for (const act of Array.isArray(custom.actions) ? custom.actions : []) {
+      if (!act || !act.label || !act.value) continue;
+      if (act.type === 'command') {
+        const cleanTarget = act.value.trim().replace(/^\//, '');
+        customButtons.push({ text: act.label.slice(0, 64), callback_data: `cmd:${cleanTarget}` });
+      } else if (act.type === 'url') {
+        if (isValidTelegramHttpsUrl(act.value)) {
+          customButtons.push({ text: act.label.slice(0, 64), url: act.value.trim() });
+        }
+      } else if (act.type === 'open_member_login') {
+        if (isValidTelegramHttpsUrl(candidateUrl)) {
+          customButtons.push({ text: act.label.slice(0, 64), url: candidateUrl });
+        }
+      }
+    }
+
+    const inlineRows: any[][] = [];
+    for (const btn of customButtons) {
+      inlineRows.push([btn]);
+    }
+    if (openAppRow.length > 0 && !customButtons.some((b) => b.url === candidateUrl)) {
+      inlineRows.push(openAppRow);
+    }
+
+    const bodyText = custom.body.trim();
+    const formattedText =
+      `<b>${escapeServerHtml(custom.title.trim())}</b>` +
+      (bodyText ? `\n\n${escapeServerHtml(bodyText)}` : '');
+
+    return {
+      photoPath:
+        normalized === 'payment' && custom.imageUrl !== '' && fs.existsSync(KHQR_PHOTO_PATH)
+          ? KHQR_PHOTO_PATH
+          : undefined,
+      text: formattedText,
+      reply_markup: inlineRows.length > 0 ? { inline_keyboard: inlineRows } : undefined,
+    };
+  }
 
   if (normalized === 'register') {
     return {
@@ -784,10 +875,11 @@ function buildTelegramBotReply(
 }
 
 async function registerCommandsWithTelegram(botToken: string): Promise<boolean> {
+  const effectiveCommands = getEffectiveTelegramBotCommands();
   const res = await fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ commands: TELEGRAM_BOT_COMMANDS }),
+    body: JSON.stringify({ commands: effectiveCommands }),
   });
   const data = await res.json();
   if (!res.ok || !data.ok) {
@@ -1037,9 +1129,30 @@ app.post('/api/telegram/bot/set-commands', async (req, res) => {
     }
     await registerCommandsWithTelegram(cleanToken);
     botWorker.commandsRegistered = true;
-    res.json({ success: true, commands: TELEGRAM_BOT_COMMANDS });
+    res.json({ success: true, commands: getEffectiveTelegramBotCommands() });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Endpoint: Read or Update Custom Command Bot Reply Templates
+app.get('/api/telegram/bot/templates', (_req, res) => {
+  res.json({ success: true, templates: loadCustomBotTemplates() });
+});
+
+app.post('/api/telegram/bot/templates', async (req, res) => {
+  try {
+    const incoming = req.body?.templates;
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+      return res.status(400).json({ success: false, error: 'Invalid templates payload' });
+    }
+    saveCustomBotTemplates(incoming);
+    if (botWorker.isRunning && botWorker.botToken) {
+      await registerCommandsWithTelegram(botWorker.botToken).catch(() => {});
+    }
+    res.json({ success: true, templates: incoming });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

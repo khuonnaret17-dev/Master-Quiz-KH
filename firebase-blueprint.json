@@ -90,6 +90,23 @@
         "note": { "type": "string" }
       },
       "required": ["username", "amount", "currency", "paidAt", "status", "permanentAccess"]
+    },
+    "BotCommandConfig": {
+      "title": "BotCommandConfig",
+      "description": "Admin-editable Command Bot reply templates and menu descriptions",
+      "type": "object",
+      "properties": {
+        "command": { "type": "string", "maxLength": 32 },
+        "titleKh": { "type": "string", "maxLength": 120 },
+        "descriptionKh": { "type": "string", "maxLength": 200 },
+        "title": { "type": "string", "maxLength": 250 },
+        "body": { "type": "string", "maxLength": 4000 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "imageAlt": { "type": "string", "maxLength": 200 },
+        "actions": { "type": "array" },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["command", "descriptionKh", "title", "body", "actions"]
     }
   },
   "firestore": {
@@ -120,6 +137,10 @@
     "/paid_users/{paidUserId}": {
       "schema": "PaidUser",
       "description": "Collection of accounts with verified permanent access"
+    },
+    "/bot_commands/{commandId}": {
+      "schema": "BotCommandConfig",
+      "description": "Customized Command Bot messages, menu descriptions, and action buttons"
     }
   }
 }

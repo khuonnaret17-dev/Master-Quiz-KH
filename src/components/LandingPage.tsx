@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, UserCheck, Lock, Send, AlertCircle, ArrowRight, X, Palette, Bot } from 'lucide-react';
-import { recordLogin } from '../services/firebase';
-import { UserSession, AppThemeId } from '../types';
+import { ShieldCheck, UserCheck, Lock, Send, AlertCircle, ArrowRight, X, Palette, Bot, QrCode } from 'lucide-react';
+import { recordLogin, subscribeBotCommands } from '../services/firebase';
+import { UserSession, AppThemeId, BotCommandConfig } from '../types';
 import { getStoredTheme, APP_THEMES } from '../services/theme';
 import { ThemeSelectorModal } from './ThemeSelectorModal';
 import { FloatingMessengerWidget } from './FloatingMessengerWidget';
@@ -20,6 +20,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
   const [activeModal, setActiveModal] = useState<'member' | 'admin' | null>(null);
   const [currentTheme, setCurrentTheme] = useState<AppThemeId>(() => getStoredTheme());
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [botCommands, setBotCommands] = useState<Record<string, BotCommandConfig>>({});
 
   useEffect(() => {
     const handleThemeChange = (e: any) => {
@@ -27,6 +28,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
     };
     window.addEventListener('appthemechange', handleThemeChange);
     return () => window.removeEventListener('appthemechange', handleThemeChange);
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeBotCommands(setBotCommands);
+    return () => unsub();
   }, []);
 
   const currentThemeConfig = APP_THEMES.find((t) => t.id === currentTheme) || APP_THEMES[0];
@@ -98,34 +104,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
       <div>
         <KhmerLatticeBar />
 
-        {/* Top Bar */}
-        <div className="w-full max-w-5xl mx-auto px-4 pt-5 flex flex-wrap items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              window.dispatchEvent(
-                new CustomEvent('open-command-bot', { detail: { command: '/register' } })
-              )
-            }
-            className="flex items-center gap-2 px-4 py-2 rounded-xl khmer-frame-card text-xs sm:text-sm font-bold khmer-accent-text hover:opacity-90 transition cursor-pointer"
-          >
-            <Bot className="w-4 h-4 shrink-0" />
-            <span>ណែនាំចុះឈ្មោះ (Command Bot)</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsThemeModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl khmer-frame-card text-sm font-semibold hover:opacity-90 transition cursor-pointer"
-            title={`ប្តូររចនាប័ទ្ម (Theme: ${currentThemeConfig.nameKhmer})`}
-          >
-            <Palette className="w-4 h-4 khmer-gold-text" />
-            <span>{currentThemeConfig.emoji} {currentThemeConfig.nameKhmer}</span>
-          </button>
-        </div>
-
         {/* Header Section */}
-        <header className="w-full max-w-4xl mx-auto pt-4 pb-4 px-4 text-center">
+        <header className="w-full max-w-4xl mx-auto pt-6 pb-4 px-4 text-center">
           <div className="space-y-1 mb-4">
             <KhmerLotusCrest size={56} className="mx-auto mb-1.5" />
             <p className="font-moul khmer-gold-text text-lg sm:text-xl">
@@ -142,6 +122,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
               <img
                 src="https://i.postimg.cc/0ygmLdvR/3QCM_Ep4.png"
                 alt="Master Quiz KH Logo"
+                referrerPolicy="no-referrer"
                 className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover"
               />
             </div>
@@ -217,43 +198,71 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
         </div>
       </main>
 
-      {/* Footer Telegram Links */}
+      {/* Footer Action Links */}
       <footer className="w-full py-6 px-4 text-center border-t app-border app-card">
-        <KhmerLotusDivider width={180} className="mx-auto mb-3" />
-        <p className="text-sm app-text-secondary mb-2 font-medium">
-          Master Quiz KH · ប្រព័ន្ធត្រៀមប្រឡងក្របខ័ណ្ឌរដ្ឋកម្ពុជា
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-semibold">
-          <a
-            href="https://t.me/qcm_and_q_a"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="khmer-accent-text hover:underline flex items-center gap-1.5 transition"
-          >
-            <Send className="w-4 h-4" />
-            <span>ទំនាក់ទំនង Telegram (@qcm_and_q_a)</span>
-          </a>
-          <span className="app-text-muted">·</span>
-          <a
-            href="https://t.me/qiuzs_bot"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="khmer-gold-text hover:underline flex items-center gap-1.5 transition"
-          >
-            <Send className="w-4 h-4" />
-            <span>Telegram Bot (@qiuzs_bot)</span>
-          </a>
-          <span className="app-text-muted">·</span>
-          <button
-            type="button"
-            onClick={() =>
-              window.dispatchEvent(new CustomEvent('open-command-bot', { detail: { command: '/register' } }))
-            }
-            className="khmer-accent-text hover:underline flex items-center gap-1.5 transition cursor-pointer"
-          >
-            <Bot className="w-4 h-4" />
-            <span>ណែនាំចុះឈ្មោះ (Command Bot)</span>
-          </button>
+        <div className="w-full max-w-4xl mx-auto">
+          <KhmerLotusDivider width={180} className="mx-auto mb-3" />
+          <p className="text-xs sm:text-sm app-text-secondary mb-4 font-medium">
+            Master Quiz KH · ប្រព័ន្ធត្រៀមប្រឡងក្របខ័ណ្ឌរដ្ឋកម្ពុជា
+          </p>
+
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-center gap-2.5 sm:gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent('open-command-bot', { detail: { command: '/register' } })
+                )
+              }
+              className="min-h-[42px] px-3.5 py-2 rounded-xl khmer-frame-card text-xs sm:text-sm font-semibold khmer-accent-text hover:opacity-90 transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
+            >
+              <Bot className="w-4 h-4 shrink-0" />
+              <span>ចុះឈ្មោះ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent('open-command-bot', { detail: { command: '/payment' } })
+                )
+              }
+              className="min-h-[42px] px-3.5 py-2 rounded-xl khmer-frame-card text-xs sm:text-sm font-semibold khmer-gold-text hover:opacity-90 transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
+            >
+              <QrCode className="w-4 h-4 shrink-0" />
+              <span>បង់ KHQR</span>
+            </button>
+
+            <a
+              href="https://t.me/qcm_and_q_a"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-[42px] px-3.5 py-2 rounded-xl khmer-frame-card text-xs sm:text-sm font-semibold khmer-accent-text hover:opacity-90 transition flex items-center justify-center gap-1.5 whitespace-nowrap"
+            >
+              <Send className="w-4 h-4 shrink-0" />
+              <span>@qcm_and_q_a</span>
+            </a>
+
+            <a
+              href="https://t.me/qiuzs_bot"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-[42px] px-3.5 py-2 rounded-xl khmer-frame-card text-xs sm:text-sm font-semibold khmer-gold-text hover:opacity-90 transition flex items-center justify-center gap-1.5 whitespace-nowrap"
+            >
+              <Send className="w-4 h-4 shrink-0" />
+              <span>@qiuzs_bot</span>
+            </a>
+
+            <button
+              type="button"
+              onClick={() => setIsThemeModalOpen(true)}
+              className="col-span-2 sm:col-span-1 min-h-[42px] px-3.5 py-2 rounded-xl khmer-frame-card text-xs sm:text-sm font-semibold app-text-primary hover:opacity-90 transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
+              title={`ប្តូររចនាប័ទ្ម (${currentThemeConfig.nameKhmer})`}
+            >
+              <Palette className="w-4 h-4 khmer-gold-text shrink-0" />
+              <span>{currentThemeConfig.emoji} រចនាប័ទ្ម</span>
+            </button>
+          </div>
         </div>
       </footer>
 
@@ -442,6 +451,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess }) => {
         notifications={[]}
         session={null}
         onOpenMemberLogin={() => setActiveModal('member')}
+        hideClosedLauncher
+        botCommands={botCommands}
       />
     </div>
   );

@@ -188,34 +188,34 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
                   </div>
 
-                  {/* Section 1: Navigation */}
-                  <div className="space-y-1 mb-2 pb-2 border-b app-border">
-                    <p className="text-xs font-bold app-text-muted px-2.5 py-1">
-                      ទំព័រមេ និងផ្នែក
-                    </p>
+                  {/* Section 1: Navigation (Mobile Admin Switcher Only) */}
+                  {session.role === 'admin' && (
+                    <div className="md:hidden space-y-1 mb-2 pb-2 border-b app-border">
+                      <p className="text-xs font-bold app-text-muted px-2.5 py-1">
+                        ទំព័រមេ និងផ្នែក
+                      </p>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onTabChange('play');
-                        setIsMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer ${
-                        activeTab === 'play'
-                          ? 'khmer-btn-primary'
-                          : 'app-text-primary hover:bg-[var(--theme-bg-hover)]'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2.5">
-                        <Play className="w-4 h-4" />
-                        <span>ធ្វើតេស្តវិញ្ញាសា</span>
-                      </span>
-                      {activeTab === 'play' && (
-                        <span className="text-xs font-bold">បច្ចុប្បន្ន</span>
-                      )}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onTabChange('play');
+                          setIsMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer ${
+                          activeTab === 'play'
+                            ? 'khmer-btn-primary'
+                            : 'app-text-primary hover:bg-[var(--theme-bg-hover)]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <Play className="w-4 h-4" />
+                          <span>ធ្វើតេស្តវិញ្ញាសា</span>
+                        </span>
+                        {activeTab === 'play' && (
+                          <span className="text-xs font-bold">បច្ចុប្បន្ន</span>
+                        )}
+                      </button>
 
-                    {session.role === 'admin' && (
                       <button
                         type="button"
                         onClick={() => {
@@ -236,8 +236,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                           <span className="text-xs font-bold">បច្ចុប្បន្ន</span>
                         )}
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Section 2: Preferences */}
                   <div className="space-y-1 mb-2 pb-2 border-b app-border">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserSession, Question, Subject, AppNotification, LoginRecord, PresenceRecord, Feedback, AppThemeId } from './types';
+import { UserSession, Question, Subject, AppNotification, LoginRecord, PresenceRecord, Feedback, AppThemeId, BotCommandConfig } from './types';
 import { LandingPage } from './components/LandingPage';
 import { Navbar } from './components/Navbar';
 import { PlaySection } from './components/PlaySection';
@@ -15,8 +15,10 @@ import {
   subscribeLogins,
   subscribePresence,
   subscribeFeedbacks,
+  subscribeBotCommands,
   updatePresenceHeartbeat,
 } from './services/firebase';
+import { syncTelegramBotTemplates } from './services/telegram';
 import { getMuteState, setMuteState } from './utils/khmer';
 
 export default function App() {
@@ -57,6 +59,7 @@ export default function App() {
   const [logins, setLogins] = useState<LoginRecord[]>([]);
   const [presence, setPresence] = useState<PresenceRecord[]>([]);
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
+  const [botCommands, setBotCommands] = useState<Record<string, BotCommandConfig>>({});
 
   // Subscriptions to Firestore
   useEffect(() => {
@@ -66,6 +69,12 @@ export default function App() {
     const unsubLog = subscribeLogins(setLogins);
     const unsubPres = subscribePresence(setPresence);
     const unsubFb = subscribeFeedbacks(setFeedbacks);
+    const unsubBot = subscribeBotCommands((cmds) => {
+      setBotCommands(cmds);
+      if (Object.keys(cmds).length > 0) {
+        syncTelegramBotTemplates(cmds);
+      }
+    });
 
     return () => {
       unsubQ();
@@ -74,6 +83,7 @@ export default function App() {
       unsubLog();
       unsubPres();
       unsubFb();
+      unsubBot();
     };
   }, []);
 
@@ -168,6 +178,8 @@ export default function App() {
             logins={logins}
             presence={presence}
             feedbacks={feedbacks}
+            notifications={notifications}
+            botCommands={botCommands}
           />
         ) : (
           <PlaySection
@@ -180,7 +192,11 @@ export default function App() {
       </main>
 
       {/* Floating Messenger Widget */}
-      <FloatingMessengerWidget notifications={notifications} session={session} />
+      <FloatingMessengerWidget
+        notifications={notifications}
+        session={session}
+        botCommands={botCommands}
+      />
 
       {/* Theme Selection Modal */}
       <ThemeSelectorModal

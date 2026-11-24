@@ -10,12 +10,18 @@ import {
   ExternalLink,
   ArrowRight,
   RotateCcw,
+  Trash2,
 } from 'lucide-react';
-import { AppNotification, UserSession } from '../types';
-import { submitFeedback } from '../services/firebase';
+import { AppNotification, UserSession, BotCommandConfig } from '../types';
+import {
+  submitFeedback,
+  broadcastNotification,
+  deleteNotification,
+  deleteAllNotifications,
+} from '../services/firebase';
 import { toKhmerNum } from '../utils/khmer';
 import {
-  BOT_COMMANDS_LIST,
+  getMergedBotCommands,
   BotActionButton,
   BotCommandReply,
   resolveBotCommand,
@@ -25,6 +31,8 @@ interface FloatingMessengerWidgetProps {
   notifications: AppNotification[];
   session?: UserSession | null;
   onOpenMemberLogin?: () => void;
+  hideClosedLauncher?: boolean;
+  botCommands?: Record<string, BotCommandConfig>;
 }
 
 interface BotChatMessage {
@@ -39,11 +47,29 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
   notifications,
   session = null,
   onOpenMemberLogin,
+  hideClosedLauncher = false,
+  botCommands,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'bot' | 'notifs' | 'feedback'>(
     session ? 'notifs' : 'bot'
   );
+
+  const botCommandsRef = useRef<Record<string, BotCommandConfig> | undefined>(botCommands);
+  useEffect(() => {
+    botCommandsRef.current = botCommands;
+    setBotMessages((prev) => {
+      if (prev.length === 1 && prev[0].id === 'init-welcome') {
+        return [
+          {
+            ...prev[0],
+            reply: resolveBotCommand('/start', botCommands),
+          },
+        ];
+      }
+      return prev;
+    });
+  }, [botCommands]);
 
   // Command Bot state
   const [botInput, setBotInput] = useState('');
@@ -51,7 +77,7 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
     {
       id: 'init-welcome',
       sender: 'bot',
-      reply: resolveBotCommand('/start'),
+      reply: resolveBotCommand('/start', botCommands),
       timestamp: new Date().toISOString(),
     },
   ]);
@@ -61,6 +87,13 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
   const [feedbackText, setFeedbackText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSent, setIsSent] = useState(false);
+
+  // Admin quick notification state
+  const [adminNotifText, setAdminNotifText] = useState('');
+  const [adminNotifType, setAdminNotifType] = useState<'info' | 'success' | 'warning'>('info');
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+
+  const isAdmin = session?.role === 'admin';
 
   const runBotCommand = (commandText: string) => {
     const clean = commandText.trim();
@@ -73,7 +106,7 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
       timestamp: new Date().toISOString(),
     };
 
-    const reply = resolveBotCommand(clean);
+    const reply = resolveBotCommand(clean, botCommandsRef.current);
     const botMsg: BotChatMessage = {
       id: `b-${Date.now()}-${Math.random()}`,
       sender: 'bot',
@@ -154,7 +187,7 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
       {
         id: `reset-${Date.now()}`,
         sender: 'bot',
-        reply: resolveBotCommand('/start'),
+        reply: resolveBotCommand('/start', botCommandsRef.current),
         timestamp: new Date().toISOString(),
       },
     ]);
@@ -177,30 +210,53 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
     }
   };
 
+  const handleAdminBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !adminNotifText.trim() || isSendingNotif) return;
+
+    setIsSendingNotif(true);
+    try {
+      await broadcastNotification(adminNotifText.trim(), adminNotifType);
+      setAdminNotifText('');
+    } catch (err) {
+      console.error('Error broadcasting notification:', err);
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
+  const handleAdminDeleteNotification = async (id: string) => {
+    if (!isAdmin) return;
+    try {
+      await deleteNotification(id);
+    } catch (err) {
+      console.error('Error deleting notification:', err);
+    }
+  };
+
+  const handleAdminClearAllNotifications = async () => {
+    if (!isAdmin || notifications.length === 0) return;
+    try {
+      await deleteAllNotifications(notifications.map((n) => n.id));
+    } catch (err) {
+      console.error('Error clearing notifications:', err);
+    }
+  };
+
   return (
     <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50">
-      {!isOpen && (
+      {!isOpen && !hideClosedLauncher && (
         <button
           type="button"
           onClick={() => {
             setIsOpen(true);
             if (!session) setActiveTab('bot');
           }}
-          className={
-            session
-              ? 'relative w-12 h-12 sm:w-14 sm:h-14 rounded-full khmer-btn-primary ring-2 ring-[var(--theme-gold)]/65 shadow-lg flex items-center justify-center transition-transform hover:scale-105 cursor-pointer'
-              : 'relative px-4 py-3 rounded-2xl khmer-btn-primary ring-2 ring-[var(--theme-gold)]/75 shadow-xl flex items-center gap-2 font-bold text-xs sm:text-sm transition-transform hover:scale-105 cursor-pointer'
-          }
+          className="relative w-12 h-12 sm:w-13 sm:h-13 rounded-full khmer-btn-primary ring-2 ring-[var(--theme-gold)]/70 shadow-lg flex items-center justify-center transition-transform hover:scale-105 cursor-pointer"
           title="Command Bot ណែនាំចុះឈ្មោះ ដំណឹង និងមតិយោបល់"
+          aria-label="បើក Command Bot"
         >
-          {session ? (
-            <MessageCircle className="w-6 h-6" />
-          ) : (
-            <>
-              <Bot className="w-5 h-5 shrink-0" />
-              <span>Command Bot ណែនាំ</span>
-            </>
-          )}
+          {session ? <MessageCircle className="w-6 h-6" /> : <Bot className="w-6 h-6" />}
           {session && notifications.length > 0 && (
             <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full khmer-btn-crimson font-bold text-xs flex items-center justify-center shadow">
               {toKhmerNum(notifications.length)}
@@ -291,7 +347,7 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
               {/* Quick Slash Command Bar */}
               <div className="px-3 py-2 border-b app-border app-subcard flex items-center gap-1.5 overflow-x-auto">
                 <Terminal className="w-3.5 h-3.5 khmer-gold-text shrink-0" />
-                {BOT_COMMANDS_LIST.map((cmd) => (
+                {getMergedBotCommands(botCommands).map((cmd) => (
                   <button
                     key={cmd.command}
                     type="button"
@@ -398,6 +454,56 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
             </div>
           ) : activeTab === 'notifs' && session ? (
             <div className="p-4 overflow-y-auto flex-1 space-y-3">
+              {isAdmin && (
+                <form
+                  onSubmit={handleAdminBroadcast}
+                  className="p-3 rounded-xl app-subcard space-y-2 border app-border"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold khmer-accent-text">
+                      ជូនដំណឹងថ្មីទៅកាន់សមាជិក
+                    </span>
+                    {notifications.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleAdminClearAllNotifications}
+                        className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>លុបទាំងអស់</span>
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={adminNotifText}
+                    onChange={(e) => setAdminNotifText(e.target.value)}
+                    placeholder="វាយអត្ថបទដំណឹង..."
+                    className="w-full px-3 py-2 rounded-xl app-input text-xs sm:text-sm"
+                    required
+                  />
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={adminNotifType}
+                      onChange={(e) => setAdminNotifType(e.target.value as any)}
+                      className="flex-1 px-2.5 py-2 rounded-xl app-input text-xs"
+                    >
+                      <option value="info">ព័ត៌មាន</option>
+                      <option value="success">ជោគជ័យ</option>
+                      <option value="warning">ប្រុងប្រយ័ត្ន</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={isSendingNotif || !adminNotifText.trim()}
+                      className="px-3.5 py-2 rounded-xl khmer-btn-primary text-xs font-bold flex items-center gap-1 disabled:opacity-50 cursor-pointer shrink-0"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>{isSendingNotif ? 'កំពុងផ្ញើ...' : 'ផ្សាយ'}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
               {notifications.length === 0 ? (
                 <p className="text-sm app-text-muted text-center py-6">មិនទាន់មានដំណឹងថ្មីទេ</p>
               ) : (
@@ -412,7 +518,20 @@ export const FloatingMessengerWidget: React.FC<FloatingMessengerWidgetProps> = (
                         : 'app-subcard'
                     }`}
                   >
-                    <p className="font-kantumruy">{notif.message}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-kantumruy flex-1 break-words">{notif.message}</p>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleAdminDeleteNotification(notif.id)}
+                          title="លុបដំណឹងនេះ"
+                          className="p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-600/15 transition shrink-0 cursor-pointer"
+                          aria-label="លុបដំណឹង"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                     <span className="block text-xs app-text-muted mt-1.5 font-mono">
                       {new Date(notif.timestamp).toLocaleString('km-KH')}
                     </span>

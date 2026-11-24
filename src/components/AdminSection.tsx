@@ -31,13 +31,16 @@ import {
   Image as ImageIcon,
   Share2,
   Bot,
+  Search,
+  RotateCcw,
+  Save,
 } from 'lucide-react';
-import { Question, Subject, LoginRecord, PresenceRecord, Feedback, QuestionType } from '../types';
+import { Question, Subject, LoginRecord, PresenceRecord, Feedback, QuestionType, AppNotification, BotCommandConfig, BotActionButton } from '../types';
 import { toKhmerNum, getOptionLabel, shuffleArray } from '../utils/khmer';
 import { KhmerCornerMotif } from './KhmerOrnaments';
 import { SocialShareModal } from './SocialShareModal';
 import { formatQuestionSocialCaption, ShareImageFormat } from '../services/socialShare';
-import { BOT_COMMANDS_LIST } from '../utils/botCommands';
+import { DEFAULT_BOT_COMMANDS, getMergedBotCommands, KHQR_IMAGE_PATH } from '../utils/botCommands';
 import {
   addQuestion,
   updateQuestion,
@@ -47,6 +50,13 @@ import {
   updateSubject,
   deleteSubject,
   broadcastNotification,
+  deleteNotification,
+  deleteAllNotifications,
+  deleteLoginRecord,
+  deleteLoginsByIds,
+  saveBotCommandConfig,
+  resetBotCommandConfig,
+  resetAllBotCommands,
 } from '../services/firebase';
 import {
   testTelegramBot,
@@ -87,6 +97,8 @@ interface AdminSectionProps {
   logins: LoginRecord[];
   presence: PresenceRecord[];
   feedbacks: Feedback[];
+  notifications: AppNotification[];
+  botCommands?: Record<string, BotCommandConfig>;
 }
 
 export const AdminSection: React.FC<AdminSectionProps> = ({
@@ -95,6 +107,8 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   logins,
   presence,
   feedbacks,
+  notifications,
+  botCommands = {},
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
     'single' | 'bulk_ai' | 'manage' | 'export' | 'telegram' | 'monitoring'
@@ -418,6 +432,116 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
     } finally {
       setIsUpdatingCommandBot(false);
     }
+  };
+
+  // Command Bot Content Editor State & Handlers
+  const [editingBotCommand, setEditingBotCommand] = useState<BotCommandConfig | null>(null);
+  const [isSavingBotCommand, setIsSavingBotCommand] = useState(false);
+  const [botEditorStatusMsg, setBotEditorStatusMsg] = useState<{ text: string; success: boolean } | null>(null);
+
+  const mergedBotCommands = useMemo(() => getMergedBotCommands(botCommands), [botCommands]);
+  const customizedBotCommandsCount = useMemo(
+    () => DEFAULT_BOT_COMMANDS.filter((c) => Boolean(botCommands[c.command])).length,
+    [botCommands]
+  );
+
+  const openBotCommandEditor = (cmd: BotCommandConfig) => {
+    setBotEditorStatusMsg(null);
+    setEditingBotCommand({
+      command: cmd.command,
+      titleKh: cmd.titleKh || '',
+      descriptionKh: cmd.descriptionKh || '',
+      title: cmd.title || '',
+      body: cmd.body || '',
+      imageUrl: cmd.imageUrl || '',
+      imageAlt: cmd.imageAlt || '',
+      actions: (cmd.actions || []).map((a) => ({ ...a })),
+    });
+  };
+
+  const handleSaveBotCommandEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBotCommand) return;
+
+    if (!editingBotCommand.title.trim() || !editingBotCommand.descriptionKh.trim()) {
+      setBotEditorStatusMsg({
+        text: 'សូមបំពេញចំណងជើងសារឆ្លើយតប និងការពិពណ៌នាខ្លីក្នុងម៉ឺនុយ Bot!',
+        success: false,
+      });
+      return;
+    }
+
+    setIsSavingBotCommand(true);
+    setBotEditorStatusMsg(null);
+    try {
+      const cleanImageUrl = editingBotCommand.imageUrl?.trim() || undefined;
+      await saveBotCommandConfig({
+        command: editingBotCommand.command,
+        titleKh: editingBotCommand.titleKh.trim() || editingBotCommand.command,
+        descriptionKh: editingBotCommand.descriptionKh.trim(),
+        title: editingBotCommand.title.trim(),
+        body: editingBotCommand.body,
+        imageUrl: cleanImageUrl,
+        imageAlt: cleanImageUrl ? editingBotCommand.imageAlt?.trim() || 'Command Bot Image' : undefined,
+        actions: editingBotCommand.actions
+          .filter((a) => a.label.trim() && a.value.trim())
+          .map((a) => ({
+            label: a.label.trim(),
+            type: a.type,
+            value: a.value.trim(),
+          })),
+      });
+
+      const savedCmd = editingBotCommand.command;
+      setEditingBotCommand(null);
+      setBotEditorStatusMsg({
+        text: `បានរក្សាទុកខ្លឹមសារ ${savedCmd} និងធ្វើបច្ចុប្បន្នភាពលើ Command Bot ក្នុងកម្មវិធី និង Telegram @qiuzs_bot ជោគជ័យ!`,
+        success: true,
+      });
+    } catch (err: any) {
+      setBotEditorStatusMsg({
+        text: err?.message || 'បរាជ័យក្នុងការរក្សាទុកខ្លឹមសារ Command Bot!',
+        success: false,
+      });
+    } finally {
+      setIsSavingBotCommand(false);
+    }
+  };
+
+  const handleResetSingleBotCommand = async (command: string) => {
+    setIsSavingBotCommand(true);
+    setBotEditorStatusMsg(null);
+    try {
+      await resetBotCommandConfig(command);
+      setEditingBotCommand(null);
+      setBotEditorStatusMsg({
+        text: `បានកំណត់ខ្លឹមសារ ${command} ទៅទម្រង់លំនាំដើមវិញរួចរាល់!`,
+        success: true,
+      });
+    } catch (err: any) {
+      setBotEditorStatusMsg({
+        text: err?.message || `បរាជ័យក្នុងការកំណត់លំនាំដើមសម្រាប់ ${command}!`,
+        success: false,
+      });
+    } finally {
+      setIsSavingBotCommand(false);
+    }
+  };
+
+  const handleResetAllBotCommandsClick = () => {
+    setDeleteConfirmDialog({
+      isOpen: true,
+      title: 'កំណត់ Command Bot ទាំងអស់ទៅលំនាំដើម?',
+      message: 'តើអ្នកពិតជាចង់លុបការកែប្រែទាំងអស់ ហើយត្រឡប់ខ្លឹមសារ Command Bot ទាំង ៦ មកទម្រង់ដើមវិញមែនទេ?',
+      subMessage: 'សកម្មភាពនេះនឹងធ្វើបច្ចុប្បន្នភាពទាំងលើ Command Bot ក្នុងកម្មវិធី និង Telegram @qiuzs_bot។',
+      onConfirm: async () => {
+        await resetAllBotCommands(DEFAULT_BOT_COMMANDS.map((c) => c.command));
+        setBotEditorStatusMsg({
+          text: 'បានកំណត់ខ្លឹមសារ Command Bot ទាំងអស់ទៅទម្រង់លំនាំដើមវិញជោគជ័យ!',
+          success: true,
+        });
+      },
+    });
   };
 
   // Broadcast Notification Form
@@ -1233,20 +1357,128 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
   };
 
   const [broadcastStatusMsg, setBroadcastStatusMsg] = useState<{ text: string; success: boolean } | null>(null);
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
 
   // Broadcast Notification
   const handleBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!broadcastMsg.trim()) return;
+    if (!broadcastMsg.trim() || isBroadcasting) return;
 
     setBroadcastStatusMsg(null);
+    setIsBroadcasting(true);
     try {
       await broadcastNotification(broadcastMsg.trim(), broadcastType);
       setBroadcastMsg('');
       setBroadcastStatusMsg({ text: 'បានផ្សាយដំណឹងទៅកាន់សមាជិកទាំងអស់ជោគជ័យ!', success: true });
     } catch {
       setBroadcastStatusMsg({ text: 'បរាជ័យក្នុងការផ្សាយដំណឹង', success: false });
+    } finally {
+      setIsBroadcasting(false);
     }
+  };
+
+  const handleDeleteSingleNotification = async (id: string) => {
+    setBroadcastStatusMsg(null);
+    try {
+      await deleteNotification(id);
+      setBroadcastStatusMsg({ text: 'បានលុបដំណឹងចេញពីប្រព័ន្ធជោគជ័យ!', success: true });
+    } catch {
+      setBroadcastStatusMsg({ text: 'បរាជ័យក្នុងការលុបដំណឹង', success: false });
+    }
+  };
+
+  const handleDeleteAllNotificationsClick = () => {
+    if (notifications.length === 0) return;
+    setDeleteConfirmDialog({
+      isOpen: true,
+      title: 'បញ្ជាក់ការលុបដំណឹងទាំងអស់',
+      message: `តើអ្នកពិតជាចង់លុបដំណឹងទាំង ${toKhmerNum(notifications.length)} ចេញពីប្រព័ន្ធមែនទេ?`,
+      subMessage: 'ដំណឹងទាំងអស់នឹងត្រូវលុបចេញពីទំព័រសមាជិក និងអ្នកគ្រប់គ្រងជាអចិន្ត្រៃយ៍។',
+      onConfirm: async () => {
+        setBroadcastStatusMsg(null);
+        try {
+          await deleteAllNotifications(notifications.map((n) => n.id));
+          setBroadcastStatusMsg({ text: 'បានលុបដំណឹងទាំងអស់ជោគជ័យ!', success: true });
+        } catch {
+          setBroadcastStatusMsg({ text: 'បរាជ័យក្នុងការលុបដំណឹងទាំងអស់', success: false });
+        }
+      },
+    });
+  };
+
+  // Login History Management
+  const [loginSearch, setLoginSearch] = useState('');
+  const [loginStatusMsg, setLoginStatusMsg] = useState<{ text: string; success: boolean } | null>(null);
+
+  const filteredLogins = useMemo(() => {
+    const term = loginSearch.trim().toLowerCase();
+    if (!term) return logins;
+    return logins.filter(
+      (l) =>
+        l.username.toLowerCase().includes(term) ||
+        l.role.toLowerCase().includes(term)
+    );
+  }, [logins, loginSearch]);
+
+  const handleDeleteSingleLogin = async (record: LoginRecord) => {
+    if (!record.id) return;
+    setLoginStatusMsg(null);
+    try {
+      await deleteLoginRecord(record.id);
+      setLoginStatusMsg({
+        text: `បានលុបប្រវត្តិ Login របស់ «${record.username}» ជោគជ័យ!`,
+        success: true,
+      });
+    } catch {
+      setLoginStatusMsg({ text: 'បរាជ័យក្នុងការលុបប្រវត្តិ Login', success: false });
+    }
+  };
+
+  const handleDeleteMemberAllLogins = (username: string) => {
+    const matching = logins.filter((l) => l.username === username && l.id);
+    if (matching.length === 0) return;
+    setDeleteConfirmDialog({
+      isOpen: true,
+      title: 'បញ្ជាក់ការលុបប្រវត្តិ Login សមាជិក',
+      message: `តើអ្នកចង់លុបប្រវត្តិ Login ទាំង ${toKhmerNum(matching.length)} ដងរបស់ «${username}» មែនទេ?`,
+      subMessage: 'ប្រវត្តិ Login ទាំងអស់របស់គណនីនេះនឹងត្រូវលុបចេញជាអចិន្ត្រៃយ៍។',
+      onConfirm: async () => {
+        setLoginStatusMsg(null);
+        try {
+          await deleteLoginsByIds(matching.map((m) => m.id as string));
+          setLoginStatusMsg({
+            text: `បានលុបប្រវត្តិ Login ទាំងអស់របស់ «${username}» ជោគជ័យ!`,
+            success: true,
+          });
+        } catch {
+          setLoginStatusMsg({ text: 'បរាជ័យក្នុងការលុបប្រវត្តិ Login', success: false });
+        }
+      },
+    });
+  };
+
+  const handleDeleteAllLoginsClick = () => {
+    const targetList = loginSearch.trim() ? filteredLogins : logins;
+    const ids = targetList.map((l) => l.id).filter(Boolean) as string[];
+    if (ids.length === 0) return;
+
+    const isFiltered = Boolean(loginSearch.trim());
+    setDeleteConfirmDialog({
+      isOpen: true,
+      title: isFiltered ? 'បញ្ជាក់ការលុបប្រវត្តិ Login ដែលបានស្វែងរក' : 'បញ្ជាក់ការលុបប្រវត្តិ Login ទាំងអស់',
+      message: `តើអ្នកពិតជាចង់លុបប្រវត្តិ Login ចំនួន ${toKhmerNum(ids.length)} ចេញពីប្រព័ន្ធមែនទេ?`,
+      subMessage: 'ទិន្នន័យប្រវត្តិ Login ដែលបានលុបមិនអាចទាញយកវិញបានទេ។',
+      onConfirm: async () => {
+        setLoginStatusMsg(null);
+        try {
+          await deleteLoginsByIds(ids);
+          if (isFiltered) setLoginSearch('');
+          setLoginStatusMsg({ text: 'បានលុបប្រវត្តិ Login ជោគជ័យ!', success: true });
+        } catch {
+          setLoginStatusMsg({ text: 'បរាជ័យក្នុងការលុបប្រវត្តិ Login', success: false });
+        }
+      },
+    });
   };
 
   return (
@@ -1283,7 +1515,7 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
           { id: 'manage', label: 'គ្រប់គ្រងមុខវិជ្ជា/សំណួរ', icon: Settings },
           { id: 'export', label: 'Export វិញ្ញាសា (PDF)', icon: Download },
           { id: 'telegram', label: 'Telegram Bot', icon: Send },
-          { id: 'monitoring', label: 'Logins & វត្តមាន', icon: Users },
+          { id: 'monitoring', label: 'ដំណឹង & វត្តមាន', icon: Bell },
         ].map((tab) => {
           const Icon = tab.icon;
           return (
@@ -3510,22 +3742,100 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {BOT_COMMANDS_LIST.map((c) => (
-                <button
-                  key={c.command}
-                  type="button"
-                  onClick={() =>
-                    window.dispatchEvent(
-                      new CustomEvent('open-command-bot', { detail: { command: c.command } })
-                    )
-                  }
-                  className="p-2.5 rounded-xl app-card text-xs text-left hover:border-[var(--theme-accent)] transition cursor-pointer"
+            <div className="pt-2 border-t app-border space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold app-text-primary">
+                    កែប្រែខ្លឹមសារ Command Bot ទាំង {toKhmerNum(mergedBotCommands.length)}
+                  </h4>
+                  <p className="text-xs app-text-secondary">
+                    រាល់ការកែប្រែនឹងធ្វើបច្ចុប្បន្នភាពភ្លាមៗទាំងលើ Bot ក្នុងកម្មវិធី និង Telegram @qiuzs_bot
+                  </p>
+                </div>
+
+                {customizedBotCommandsCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleResetAllBotCommandsClick}
+                    className="px-3 py-1.5 rounded-xl app-card text-xs font-bold text-amber-700 dark:text-amber-300 hover:opacity-85 transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>កំណត់លំនាំដើមទាំងអស់ ({toKhmerNum(customizedBotCommandsCount)})</span>
+                  </button>
+                )}
+              </div>
+
+              {botEditorStatusMsg && (
+                <div
+                  className={`p-3 rounded-xl text-xs sm:text-sm flex items-center gap-2 border ${
+                    botEditorStatusMsg.success
+                      ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-400 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200'
+                      : 'bg-red-50 dark:bg-red-950/60 border-red-400 dark:border-red-700 text-red-900 dark:text-red-200'
+                  }`}
                 >
-                  <div className="font-mono font-bold khmer-accent-text">{c.command}</div>
-                  <div className="app-text-secondary mt-0.5 leading-snug">{c.descriptionKh}</div>
-                </button>
-              ))}
+                  {botEditorStatusMsg.success ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                  )}
+                  <span className="font-medium">{botEditorStatusMsg.text}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {mergedBotCommands.map((c) => {
+                  const isCustomized = Boolean(botCommands[c.command]);
+                  return (
+                    <div
+                      key={c.command}
+                      className="p-3 rounded-xl app-card border app-border flex flex-col justify-between gap-2.5 hover:border-[var(--theme-accent)] transition"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-bold text-xs sm:text-sm khmer-accent-text">
+                            {c.command}
+                          </span>
+                          {isCustomized && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 text-[10px] font-bold text-amber-800 dark:text-amber-200">
+                              បានកែប្រែ
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs font-semibold app-text-primary line-clamp-1">
+                          {c.title}
+                        </div>
+                        <div className="text-xs app-text-secondary leading-snug line-clamp-2">
+                          {c.descriptionKh}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 pt-2 border-t app-border">
+                        <button
+                          type="button"
+                          onClick={() => openBotCommandEditor(c)}
+                          className="flex-1 py-1.5 px-2.5 rounded-lg khmer-btn-primary text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>កែប្រែខ្លឹមសារ</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            window.dispatchEvent(
+                              new CustomEvent('open-command-bot', { detail: { command: c.command } })
+                            )
+                          }
+                          title={`សាកល្បង ${c.command}`}
+                          className="py-1.5 px-2.5 rounded-lg app-subcard text-xs font-semibold app-text-primary hover:opacity-80 flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>សាកល្បង</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -4038,57 +4348,129 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
       {/* 6. LOGINS, PRESENCE & BROADCAST NOTIFICATIONS */}
       {activeSubTab === 'monitoring' && (
         <div className="space-y-8 max-w-5xl mx-auto">
-          {/* Broadcast Announcement Form */}
-          <div className="app-card rounded-2xl p-6 shadow-sm">
-            <h2 className="font-moul text-base app-text-primary mb-3 flex items-center gap-2">
-              <Bell className="w-5 h-5 text-blue-600 dark:text-amber-400" />
-              <span>ផ្ញើដំណឹងប្រកាសទៅកាន់សមាជិក (Broadcast)</span>
-            </h2>
+          {/* Broadcast Announcement & Notifications Management */}
+          <div className="app-card rounded-2xl p-6 shadow-sm space-y-5">
+            <div>
+              <h2 className="font-moul text-base app-text-primary mb-3 flex items-center gap-2">
+                <Bell className="w-5 h-5 text-blue-600 dark:text-amber-400" />
+                <span>ផ្ញើដំណឹងប្រកាសទៅកាន់សមាជិក (Broadcast)</span>
+              </h2>
 
-            <form onSubmit={handleBroadcast} className="space-y-3">
-              <div className="flex flex-col sm:flex-row gap-2.5">
-                <input
-                  type="text"
-                  value={broadcastMsg}
-                  onChange={(e) => setBroadcastMsg(e.target.value)}
-                  placeholder="វាយអត្ថបទដំណឹងប្រកាសជូនសមាជិកទាំងអស់..."
-                  className="flex-1 px-3.5 py-2.5 rounded-xl app-input text-sm"
-                  required
-                />
-                <select
-                  value={broadcastType}
-                  onChange={(e) => setBroadcastType(e.target.value as any)}
-                  className="px-3.5 py-2.5 rounded-xl app-input text-sm"
-                >
-                  <option value="info">ព័ត៌មាន (Info)</option>
-                  <option value="success">ជោគជ័យ (Success)</option>
-                  <option value="warning">ការប្រុងប្រយ័ត្ន (Warning)</option>
-                </select>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm cursor-pointer"
-                >
-                  ផ្សាយដំណឹង
-                </button>
+              <form onSubmit={handleBroadcast} className="space-y-3">
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <input
+                    type="text"
+                    value={broadcastMsg}
+                    onChange={(e) => setBroadcastMsg(e.target.value)}
+                    placeholder="វាយអត្ថបទដំណឹងប្រកាសជូនសមាជិកទាំងអស់..."
+                    className="flex-1 px-3.5 py-2.5 rounded-xl app-input text-sm"
+                    required
+                  />
+                  <select
+                    value={broadcastType}
+                    onChange={(e) => setBroadcastType(e.target.value as any)}
+                    className="px-3.5 py-2.5 rounded-xl app-input text-sm"
+                  >
+                    <option value="info">ព័ត៌មាន (Info)</option>
+                    <option value="success">ជោគជ័យ (Success)</option>
+                    <option value="warning">ការប្រុងប្រយ័ត្ន (Warning)</option>
+                  </select>
+                  <button
+                    type="submit"
+                    disabled={isBroadcasting || !broadcastMsg.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-sm cursor-pointer whitespace-nowrap"
+                  >
+                    {isBroadcasting ? 'កំពុងផ្សាយ...' : 'ផ្សាយដំណឹង'}
+                  </button>
+                </div>
+
+                {broadcastStatusMsg && (
+                  <div
+                    className={`p-3 rounded-xl text-sm flex items-center gap-2 border ${
+                      broadcastStatusMsg.success
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-400 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200'
+                        : 'bg-red-50 dark:bg-red-950/60 border-red-400 dark:border-red-700 text-red-900 dark:text-red-200'
+                    }`}
+                  >
+                    {broadcastStatusMsg.success ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                    )}
+                    <span>{broadcastStatusMsg.text}</span>
+                  </div>
+                )}
+              </form>
+            </div>
+
+            {/* Existing Notifications List & Delete Controls */}
+            <div className="pt-4 border-t app-border space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-bold app-text-primary flex items-center gap-2">
+                  <span>បញ្ជីដំណឹងដែលបានផ្សាយ ({toKhmerNum(notifications.length)})</span>
+                </h3>
+                {notifications.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteAllNotificationsClick}
+                    className="px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-950/60 hover:opacity-85 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>លុបដំណឹងទាំងអស់</span>
+                  </button>
+                )}
               </div>
 
-              {broadcastStatusMsg && (
-                <div
-                  className={`p-3 rounded-xl text-sm flex items-center gap-2 border ${
-                    broadcastStatusMsg.success
-                      ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-400 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200'
-                      : 'bg-red-50 dark:bg-red-950/60 border-red-400 dark:border-red-700 text-red-900 dark:text-red-200'
-                  }`}
-                >
-                  {broadcastStatusMsg.success ? (
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                  )}
-                  <span>{broadcastStatusMsg.text}</span>
+              {notifications.length === 0 ? (
+                <p className="text-sm app-text-secondary py-4 text-center app-subcard rounded-xl">
+                  មិនទាន់មានដំណឹងប្រកាសនៅក្នុងប្រព័ន្ធទេ
+                </p>
+              ) : (
+                <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                  {notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      className={`p-3.5 rounded-xl border text-sm flex items-start justify-between gap-3 ${
+                        notif.type === 'success'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
+                          : notif.type === 'warning'
+                          ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-100'
+                          : 'app-subcard'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="text-xs font-bold uppercase tracking-wide opacity-80">
+                            {notif.type === 'success'
+                              ? 'ជោគជ័យ'
+                              : notif.type === 'warning'
+                              ? 'ប្រុងប្រយ័ត្ន'
+                              : 'ព័ត៌មាន'}
+                          </span>
+                          <span className="text-xs opacity-60">·</span>
+                          <span className="text-xs opacity-75 font-mono">
+                            {new Date(notif.timestamp).toLocaleString('km-KH')}
+                          </span>
+                        </div>
+                        <p className="font-kantumruy leading-relaxed whitespace-pre-line break-words">
+                          {notif.message}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSingleNotification(notif.id)}
+                        title="លុបដំណឹងនេះ"
+                        className="px-2.5 py-1.5 rounded-lg bg-red-600/10 hover:bg-red-600 hover:text-white text-red-700 dark:text-red-300 text-xs font-bold flex items-center gap-1 transition shrink-0 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>លុប</span>
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-            </form>
+            </div>
           </div>
 
           {/* Active Online Presence */}
@@ -4117,39 +4499,129 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
           </div>
 
           {/* Login History Table */}
-          <div className="app-card rounded-2xl p-6 shadow-sm">
-            <h2 className="font-moul text-base app-text-primary mb-4">
-              ប្រវត្តិនៃការ Login (Login Records)
-            </h2>
+          <div className="app-card rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h2 className="font-moul text-base app-text-primary">
+                ប្រវត្តិនៃការ Login ({toKhmerNum(filteredLogins.length)})
+              </h2>
 
-            <div className="overflow-x-auto max-h-80 overflow-y-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b app-border app-text-secondary font-bold">
-                    <th className="py-2.5 px-3">Username</th>
-                    <th className="py-2.5 px-3">លេខកូដដែលបានប្រើ</th>
-                    <th className="py-2.5 px-3">តួនាទី</th>
-                    <th className="py-2.5 px-3">កាលបរិច្ឆេទ & ម៉ោង</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y app-border font-mono">
-                  {logins.slice(0, 30).map((l) => (
-                    <tr key={l.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                      <td className="py-2.5 px-3 font-semibold app-text-primary font-sans">
-                        {l.username}
-                      </td>
-                      <td className="py-2.5 px-3 text-blue-700 dark:text-amber-300 font-bold">
-                        {l.passwordUsed}
-                      </td>
-                      <td className="py-2.5 px-3 uppercase text-xs app-text-secondary">{l.role}</td>
-                      <td className="py-2.5 px-3 text-xs app-text-secondary">
-                        {new Date(l.timestamp).toLocaleString('km-KH')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex-1 sm:w-56">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 app-text-muted" />
+                  <input
+                    type="text"
+                    value={loginSearch}
+                    onChange={(e) => setLoginSearch(e.target.value)}
+                    placeholder="ស្វែងរកឈ្មោះសមាជិក..."
+                    className="w-full pl-9 pr-8 py-2 rounded-xl app-input text-xs sm:text-sm"
+                  />
+                  {loginSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLoginSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 app-text-muted hover:opacity-75 cursor-pointer"
+                      aria-label="សម្អាត"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {filteredLogins.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteAllLoginsClick}
+                    className="px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/60 hover:opacity-85 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>
+                      {loginSearch.trim()
+                        ? `លុបលទ្ធផល (${toKhmerNum(filteredLogins.length)})`
+                        : 'លុបប្រវត្តិទាំងអស់'}
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
+
+            {loginStatusMsg && (
+              <div
+                className={`p-3 rounded-xl text-sm flex items-center gap-2 border ${
+                  loginStatusMsg.success
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-400 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200'
+                    : 'bg-red-50 dark:bg-red-950/60 border-red-400 dark:border-red-700 text-red-900 dark:text-red-200'
+                }`}
+              >
+                {loginStatusMsg.success ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{loginStatusMsg.text}</span>
+              </div>
+            )}
+
+            {filteredLogins.length === 0 ? (
+              <p className="text-sm app-text-secondary py-6 text-center app-subcard rounded-xl">
+                មិនទាន់មានប្រវត្តិ Login នៅក្នុងប្រព័ន្ធទេ
+              </p>
+            ) : (
+              <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b app-border app-text-secondary font-bold">
+                      <th className="py-2.5 px-3">Username</th>
+                      <th className="py-2.5 px-3">លេខកូដដែលបានប្រើ</th>
+                      <th className="py-2.5 px-3">តួនាទី</th>
+                      <th className="py-2.5 px-3">កាលបរិច្ឆេទ & ម៉ោង</th>
+                      <th className="py-2.5 px-3 text-right">សកម្មភាព</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y app-border font-mono">
+                    {filteredLogins.slice(0, 100).map((l) => {
+                      const memberCount = logins.filter((x) => x.username === l.username).length;
+                      return (
+                        <tr key={l.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                          <td className="py-2.5 px-3 font-semibold app-text-primary font-sans">
+                            {l.username}
+                          </td>
+                          <td className="py-2.5 px-3 text-blue-700 dark:text-amber-300 font-bold">
+                            {l.passwordUsed}
+                          </td>
+                          <td className="py-2.5 px-3 uppercase text-xs app-text-secondary">{l.role}</td>
+                          <td className="py-2.5 px-3 text-xs app-text-secondary">
+                            {new Date(l.timestamp).toLocaleString('km-KH')}
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-sans">
+                            <div className="inline-flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleLogin(l)}
+                                title="លុបប្រវត្តិ Login នេះ"
+                                className="px-2.5 py-1 rounded-lg bg-red-600/10 hover:bg-red-600 hover:text-white text-red-700 dark:text-red-300 text-xs font-bold inline-flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>លុប</span>
+                              </button>
+                              {memberCount > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMemberAllLogins(l.username)}
+                                  title={`លុបប្រវត្តិទាំង ${memberCount} ដងរបស់ ${l.username}`}
+                                  className="px-2 py-1 rounded-lg app-subcard hover:bg-red-600 hover:text-white text-red-700 dark:text-red-300 text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+                                >
+                                  ទាំងអស់ ({toKhmerNum(memberCount)})
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Feedbacks */}
@@ -4417,6 +4889,315 @@ export const AdminSection: React.FC<AdminSectionProps> = ({
                     className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition cursor-pointer"
                   >
                     រក្សាទុក
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDIT COMMAND BOT CONTENT */}
+      {editingBotCommand && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="app-card w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 sm:p-8 shadow-2xl relative">
+            <button
+              type="button"
+              onClick={() => !isSavingBotCommand && setEditingBotCommand(null)}
+              className="absolute top-4 right-4 app-text-muted hover:opacity-75 p-1.5 rounded-lg transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl khmer-btn-primary flex items-center justify-center shrink-0">
+                <Bot className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-moul text-base sm:text-lg app-text-primary">
+                  កែប្រែខ្លឹមសារ Command Bot ({editingBotCommand.command})
+                </h3>
+                <p className="text-xs sm:text-sm app-text-secondary">
+                  ធ្វើបច្ចុប្បន្នភាពទាំងលើ Command Bot ក្នុងកម្មវិធី និង Telegram @qiuzs_bot
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveBotCommandEdit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold app-text-primary mb-1.5">
+                    ឈ្មោះខ្លី Command (Short Title) *
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={120}
+                    value={editingBotCommand.titleKh}
+                    onChange={(e) =>
+                      setEditingBotCommand((prev) =>
+                        prev ? { ...prev, titleKh: e.target.value } : prev
+                      )
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl app-input text-sm"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold app-text-primary mb-1.5">
+                    ការពិពណ៌នាក្នុងម៉ឺនុយ Bot (Menu Description) *
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={200}
+                    value={editingBotCommand.descriptionKh}
+                    onChange={(e) =>
+                      setEditingBotCommand((prev) =>
+                        prev ? { ...prev, descriptionKh: e.target.value } : prev
+                      )
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl app-input text-sm"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold app-text-primary mb-1.5">
+                  ចំណងជើងសារឆ្លើយតប (Message Title) *
+                </label>
+                <input
+                  type="text"
+                  maxLength={250}
+                  value={editingBotCommand.title}
+                  onChange={(e) =>
+                    setEditingBotCommand((prev) =>
+                      prev ? { ...prev, title: e.target.value } : prev
+                    )
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl app-input text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold app-text-primary mb-1.5">
+                  ខ្លឹមសារសារឆ្លើយតបទាំងមូល (Message Body)
+                </label>
+                <textarea
+                  rows={8}
+                  maxLength={4000}
+                  value={editingBotCommand.body}
+                  onChange={(e) =>
+                    setEditingBotCommand((prev) =>
+                      prev ? { ...prev, body: e.target.value } : prev
+                    )
+                  }
+                  placeholder="បញ្ចូលខ្លឹមសារឆ្លើយតបរបស់ Bot..."
+                  className="w-full px-3.5 py-2.5 rounded-xl app-input text-sm leading-relaxed"
+                />
+                <p className="text-xs app-text-muted mt-1">
+                  {toKhmerNum(editingBotCommand.body.length)} / ៤០០០ តួអក្សរ
+                </p>
+              </div>
+
+              {editingBotCommand.command === '/payment' && (
+                <div className="p-3.5 rounded-xl app-subcard flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs sm:text-sm font-semibold app-text-primary">
+                      ភ្ជាប់រូបភាព QR Code KHQR ជាមួយសារ /payment
+                    </div>
+                    <div className="text-xs app-text-secondary">
+                      បង្ហាញរូបភាព KHQR ($10.00) ទាំងលើកម្មវិធី និង Telegram Bot
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditingBotCommand((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              imageUrl: prev.imageUrl ? '' : KHQR_IMAGE_PATH,
+                              imageAlt: prev.imageUrl
+                                ? ''
+                                : 'KHOUN NARET Master QuizKH - KHQR $10.00',
+                            }
+                          : prev
+                      )
+                    }
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      editingBotCommand.imageUrl
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-400 dark:border-emerald-700'
+                        : 'app-card app-text-muted'
+                    }`}
+                  >
+                    {editingBotCommand.imageUrl ? 'កំពុងភ្ជាប់ KHQR ✓' : 'បានបិទរូបភាព'}
+                  </button>
+                </div>
+              )}
+
+              {/* Action Buttons Editor */}
+              <div className="space-y-2.5 pt-2 border-t app-border">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-sm font-semibold app-text-primary">
+                    ប៊ូតុងណែនាំខាងក្រោមសារ (Action Buttons)
+                  </label>
+                  {editingBotCommand.actions.length < 8 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingBotCommand((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                actions: [
+                                  ...prev.actions,
+                                  { label: 'ប៊ូតុងថ្មី', type: 'command', value: '/help' },
+                                ],
+                              }
+                            : prev
+                        )
+                      }
+                      className="px-2.5 py-1 rounded-lg app-subcard text-xs font-bold khmer-accent-text hover:opacity-80 transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>បន្ថែមប៊ូតុង</span>
+                    </button>
+                  )}
+                </div>
+
+                {editingBotCommand.actions.length === 0 ? (
+                  <p className="text-xs app-text-muted py-2">
+                    មិនមានប៊ូតុងណែនាំទេ។ ចុច «+ បន្ថែមប៊ូតុង» ប្រសិនបើអ្នកចង់បន្ថែម។
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {editingBotCommand.actions.map((act, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-xl app-subcard grid grid-cols-1 sm:grid-cols-12 gap-2 items-center"
+                      >
+                        <input
+                          type="text"
+                          maxLength={120}
+                          value={act.label}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditingBotCommand((prev) => {
+                              if (!prev) return prev;
+                              const nextActions = [...prev.actions];
+                              nextActions[idx] = { ...nextActions[idx], label: val };
+                              return { ...prev, actions: nextActions };
+                            });
+                          }}
+                          placeholder="អក្សរលើប៊ូតុង"
+                          className="sm:col-span-5 px-3 py-1.5 rounded-lg app-input text-xs"
+                        />
+                        <select
+                          value={act.type}
+                          onChange={(e) => {
+                            const nextType = e.target.value as BotActionButton['type'];
+                            setEditingBotCommand((prev) => {
+                              if (!prev) return prev;
+                              const nextActions = [...prev.actions];
+                              const defaultVal =
+                                nextType === 'open_member_login'
+                                  ? 'member'
+                                  : nextType === 'url'
+                                  ? 'https://t.me/qcm_and_q_a'
+                                  : '/start';
+                              nextActions[idx] = {
+                                ...nextActions[idx],
+                                type: nextType,
+                                value:
+                                  nextType === 'open_member_login'
+                                    ? 'member'
+                                    : nextActions[idx].value || defaultVal,
+                              };
+                              return { ...prev, actions: nextActions };
+                            });
+                          }}
+                          className="sm:col-span-3 px-2.5 py-1.5 rounded-lg app-input text-xs"
+                        >
+                          <option value="command">ហៅ Command</option>
+                          <option value="url">បើកតំណ URL</option>
+                          <option value="open_member_login">ផ្ទាំងសមាជិក</option>
+                        </select>
+                        <input
+                          type="text"
+                          maxLength={400}
+                          value={act.value}
+                          disabled={act.type === 'open_member_login'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditingBotCommand((prev) => {
+                              if (!prev) return prev;
+                              const nextActions = [...prev.actions];
+                              nextActions[idx] = { ...nextActions[idx], value: val };
+                              return { ...prev, actions: nextActions };
+                            });
+                          }}
+                          placeholder={
+                            act.type === 'url'
+                              ? 'https://...'
+                              : act.type === 'open_member_login'
+                              ? 'member'
+                              : '/register'
+                          }
+                          className="sm:col-span-3 px-3 py-1.5 rounded-lg app-input text-xs font-mono disabled:opacity-60"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditingBotCommand((prev) => {
+                              if (!prev) return prev;
+                              return {
+                                ...prev,
+                                actions: prev.actions.filter((_, i) => i !== idx),
+                              };
+                            })
+                          }
+                          title="លុបប៊ូតុងនេះ"
+                          className="sm:col-span-1 p-1.5 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/50 transition flex items-center justify-center cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t app-border">
+                <button
+                  type="button"
+                  disabled={isSavingBotCommand}
+                  onClick={() => handleResetSingleBotCommand(editingBotCommand.command)}
+                  className="px-3.5 py-2 rounded-xl app-subcard hover:opacity-80 text-amber-700 dark:text-amber-300 font-bold text-xs sm:text-sm flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>កំណត់លំនាំដើមវិញ</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSavingBotCommand}
+                    onClick={() => setEditingBotCommand(null)}
+                    className="px-4 py-2 rounded-xl app-subcard app-text-primary text-sm font-semibold transition disabled:opacity-50 cursor-pointer"
+                  >
+                    បោះបង់
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingBotCommand}
+                    className="px-5 py-2 rounded-xl khmer-btn-primary font-bold text-sm flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>
+                      {isSavingBotCommand ? 'កំពុងរក្សាទុក...' : 'រក្សាទុក និងធ្វើបច្ចុប្បន្នភាព Bot'}
+                    </span>
                   </button>
                 </div>
               </div>

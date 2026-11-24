@@ -10,8 +10,9 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Question, Subject, Feedback, AppNotification, LoginRecord, PresenceRecord, PaidUser } from '../types';
+import { Question, Subject, Feedback, AppNotification, LoginRecord, PresenceRecord, PaidUser, BotCommandConfig } from '../types';
 import { INITIAL_QUESTIONS, INITIAL_SUBJECTS, INITIAL_NOTIFICATIONS } from './initialData';
+import { syncTelegramBotTemplates } from './telegram';
 
 // Initialize Firebase App & Firestore
 const app = initializeApp(firebaseConfig);
@@ -64,10 +65,12 @@ const STORAGE_KEYS = {
   QUESTIONS: 'mpq_cached_questions',
   SUBJECTS: 'mpq_cached_subjects',
   NOTIFICATIONS: 'mpq_cached_notifications',
+  DISMISSED_NOTIFS: 'mpq_dismissed_notifs',
   FEEDBACKS: 'mpq_cached_feedbacks',
   LOGINS: 'mpq_cached_logins',
   PRESENCE: 'mpq_cached_presence',
   PAID_USERS: 'mpq_cached_paid_users',
+  BOT_COMMANDS: 'mpq_cached_bot_commands',
 };
 
 function getLocal<T>(key: string, fallback: T): T {
@@ -156,13 +159,38 @@ export function subscribeSubjects(callback: (subjects: Subject[]) => void) {
  * Real-time Notifications Listener
  */
 export function subscribeNotifications(callback: (notifications: AppNotification[]) => void) {
-  const cached = getLocal<AppNotification[]>(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
+  const dismissedInitial = new Set<string>(getLocal<string[]>(STORAGE_KEYS.DISMISSED_NOTIFS, []));
+  const hasStoredCache = (() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS) !== null;
+    } catch {
+      return false;
+    }
+  })();
+  const initialFallback = dismissedInitial.has('__ALL__')
+    ? []
+    : INITIAL_NOTIFICATIONS.filter((n) => !dismissedInitial.has(n.id));
+  const cached = hasStoredCache
+    ? getLocal<AppNotification[]>(STORAGE_KEYS.NOTIFICATIONS, [])
+    : initialFallback;
   callback(cached);
+
+  const handleLocalChange = (e: Event) => {
+    const customEvent = e as CustomEvent<AppNotification[]>;
+    if (Array.isArray(customEvent.detail)) {
+      callback(customEvent.detail);
+    }
+  };
+  window.addEventListener('mpq-notifications-changed', handleLocalChange);
+
+  let hasEverReceivedServerDocs = false;
 
   const unsub = onSnapshot(
     collection(db, 'notifications'),
     (snapshot) => {
+      const dismissed = new Set<string>(getLocal<string[]>(STORAGE_KEYS.DISMISSED_NOTIFS, []));
       if (!snapshot.empty) {
+        hasEverReceivedServerDocs = true;
         const notifs: AppNotification[] = [];
         snapshot.forEach((d) => {
           notifs.push({ id: d.id, ...(d.data() as Omit<AppNotification, 'id'>) });
@@ -171,16 +199,33 @@ export function subscribeNotifications(callback: (notifications: AppNotification
         setLocal(STORAGE_KEYS.NOTIFICATIONS, notifs);
         callback(notifs);
       } else {
-        callback(cached);
+        const storedNow = (() => {
+          try {
+            return localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS) !== null;
+          } catch {
+            return false;
+          }
+        })();
+        if (hasEverReceivedServerDocs || dismissed.has('__ALL__') || storedNow) {
+          setLocal(STORAGE_KEYS.NOTIFICATIONS, []);
+          callback([]);
+        } else {
+          const remainingDefaults = INITIAL_NOTIFICATIONS.filter((n) => !dismissed.has(n.id));
+          setLocal(STORAGE_KEYS.NOTIFICATIONS, remainingDefaults);
+          callback(remainingDefaults);
+        }
       }
     },
     (err) => {
       handleFirestoreError(err, OperationType.GET, 'notifications');
-      callback(cached);
+      callback(getLocal<AppNotification[]>(STORAGE_KEYS.NOTIFICATIONS, initialFallback));
     }
   );
 
-  return unsub;
+  return () => {
+    window.removeEventListener('mpq-notifications-changed', handleLocalChange);
+    unsub();
+  };
 }
 
 /**
@@ -217,6 +262,14 @@ export function subscribeLogins(callback: (logins: LoginRecord[]) => void) {
   const cached = getLocal<LoginRecord[]>(STORAGE_KEYS.LOGINS, []);
   callback(cached);
 
+  const handleLocalChange = (e: Event) => {
+    const customEvent = e as CustomEvent<LoginRecord[]>;
+    if (Array.isArray(customEvent.detail)) {
+      callback(customEvent.detail);
+    }
+  };
+  window.addEventListener('mpq-logins-changed', handleLocalChange);
+
   const unsub = onSnapshot(
     collection(db, 'logins'),
     (snapshot) => {
@@ -230,11 +283,14 @@ export function subscribeLogins(callback: (logins: LoginRecord[]) => void) {
     },
     (err) => {
       handleFirestoreError(err, OperationType.GET, 'logins');
-      callback(cached);
+      callback(getLocal<LoginRecord[]>(STORAGE_KEYS.LOGINS, cached));
     }
   );
 
-  return unsub;
+  return () => {
+    window.removeEventListener('mpq-logins-changed', handleLocalChange);
+    unsub();
+  };
 }
 
 /**
@@ -399,10 +455,43 @@ export async function recordLogin(username: string, passwordUsed: string, role: 
     timestamp: new Date().toISOString(),
     role,
   };
+  const cached = getLocal<LoginRecord[]>(STORAGE_KEYS.LOGINS, []);
+  const next = [record, ...cached];
+  setLocal(STORAGE_KEYS.LOGINS, next);
+  window.dispatchEvent(new CustomEvent('mpq-logins-changed', { detail: next }));
+
   try {
     await setDoc(doc(db, 'logins', id), record);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'logins');
+  }
+}
+
+export async function deleteLoginRecord(id: string) {
+  const cached = getLocal<LoginRecord[]>(STORAGE_KEYS.LOGINS, []);
+  const next = cached.filter((l) => l.id !== id);
+  setLocal(STORAGE_KEYS.LOGINS, next);
+  window.dispatchEvent(new CustomEvent('mpq-logins-changed', { detail: next }));
+
+  try {
+    await deleteDoc(doc(db, 'logins', id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `logins/${id}`);
+  }
+}
+
+export async function deleteLoginsByIds(ids: string[]) {
+  if (ids.length === 0) return;
+  const idSet = new Set(ids);
+  const cached = getLocal<LoginRecord[]>(STORAGE_KEYS.LOGINS, []);
+  const next = cached.filter((l) => !idSet.has(l.id));
+  setLocal(STORAGE_KEYS.LOGINS, next);
+  window.dispatchEvent(new CustomEvent('mpq-logins-changed', { detail: next }));
+
+  try {
+    await Promise.all(ids.map((id) => deleteDoc(doc(db, 'logins', id))));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, 'logins');
   }
 }
 
@@ -438,19 +527,59 @@ export async function submitFeedback(username: string, text: string) {
 }
 
 export async function broadcastNotification(message: string, type: 'info' | 'success' | 'warning' = 'info') {
-  const id = `notif-${Date.now()}`;
+  const id = `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const item: AppNotification = {
     id,
     message,
     timestamp: new Date().toISOString(),
     type,
   };
+
+  const cached = getLocal<AppNotification[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const next = [item, ...cached.filter((n) => n.id !== id)];
+  setLocal(STORAGE_KEYS.NOTIFICATIONS, next);
+  window.dispatchEvent(new CustomEvent('mpq-notifications-changed', { detail: next }));
+
   try {
     await setDoc(doc(db, 'notifications', id), item);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'notifications');
   }
   return item;
+}
+
+export async function deleteNotification(id: string) {
+  const dismissed = getLocal<string[]>(STORAGE_KEYS.DISMISSED_NOTIFS, []);
+  if (!dismissed.includes(id)) {
+    setLocal(STORAGE_KEYS.DISMISSED_NOTIFS, [...dismissed, id]);
+  }
+
+  const cached = getLocal<AppNotification[]>(STORAGE_KEYS.NOTIFICATIONS, []);
+  const next = cached.filter((n) => n.id !== id);
+  setLocal(STORAGE_KEYS.NOTIFICATIONS, next);
+  window.dispatchEvent(new CustomEvent('mpq-notifications-changed', { detail: next }));
+
+  try {
+    await deleteDoc(doc(db, 'notifications', id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `notifications/${id}`);
+  }
+}
+
+export async function deleteAllNotifications(ids: string[]) {
+  const dismissed = new Set<string>(getLocal<string[]>(STORAGE_KEYS.DISMISSED_NOTIFS, []));
+  dismissed.add('__ALL__');
+  ids.forEach((id) => dismissed.add(id));
+  setLocal(STORAGE_KEYS.DISMISSED_NOTIFS, Array.from(dismissed));
+
+  setLocal(STORAGE_KEYS.NOTIFICATIONS, []);
+  window.dispatchEvent(new CustomEvent('mpq-notifications-changed', { detail: [] }));
+
+  try {
+    await Promise.all(ids.map((id) => deleteDoc(doc(db, 'notifications', id))));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, 'notifications');
+  }
 }
 
 /**
@@ -606,4 +735,119 @@ export async function deletePaidUser(id: string) {
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `paid_users/${id}`);
   }
+}
+
+function getBotCommandDocId(command: string): string {
+  return command.replace(/^\//, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+/**
+ * Real-time Command Bot Content Listener
+ */
+export function subscribeBotCommands(
+  callback: (commands: Record<string, BotCommandConfig>) => void
+) {
+  const cached = getLocal<Record<string, BotCommandConfig>>(STORAGE_KEYS.BOT_COMMANDS, {});
+  callback(cached);
+
+  const handleLocalChange = (e: Event) => {
+    const customEvent = e as CustomEvent<Record<string, BotCommandConfig>>;
+    if (customEvent.detail && typeof customEvent.detail === 'object') {
+      callback(customEvent.detail);
+    }
+  };
+  window.addEventListener('mpq-bot-commands-changed', handleLocalChange);
+
+  const unsub = onSnapshot(
+    collection(db, 'bot_commands'),
+    (snapshot) => {
+      const map: Record<string, BotCommandConfig> = {};
+      snapshot.forEach((d) => {
+        const data = d.data() as BotCommandConfig;
+        if (data?.command) {
+          map[data.command] = data;
+        }
+      });
+      setLocal(STORAGE_KEYS.BOT_COMMANDS, map);
+      callback(map);
+    },
+    (err) => {
+      handleFirestoreError(err, OperationType.GET, 'bot_commands');
+      callback(getLocal<Record<string, BotCommandConfig>>(STORAGE_KEYS.BOT_COMMANDS, cached));
+    }
+  );
+
+  return () => {
+    window.removeEventListener('mpq-bot-commands-changed', handleLocalChange);
+    unsub();
+  };
+}
+
+export async function saveBotCommandConfig(config: BotCommandConfig) {
+  const docId = getBotCommandDocId(config.command);
+  const payload = sanitizeData({
+    command: config.command.trim().slice(0, 32),
+    titleKh: (config.titleKh || '').trim().slice(0, 120),
+    descriptionKh: config.descriptionKh.trim().slice(0, 200),
+    title: config.title.trim().slice(0, 250),
+    body: config.body.slice(0, 4000),
+    imageUrl: config.imageUrl ? config.imageUrl.trim().slice(0, 500) : undefined,
+    imageAlt: config.imageAlt ? config.imageAlt.trim().slice(0, 200) : undefined,
+    actions: (config.actions || [])
+      .slice(0, 10)
+      .filter((a) => a.label.trim() && a.value.trim())
+      .map((a) => ({
+        label: a.label.trim().slice(0, 120),
+        type: a.type,
+        value: a.value.trim().slice(0, 400),
+      })),
+    updatedAt: new Date().toISOString(),
+  }) as BotCommandConfig;
+
+  const cached = getLocal<Record<string, BotCommandConfig>>(STORAGE_KEYS.BOT_COMMANDS, {});
+  const next = { ...cached, [payload.command]: payload };
+  setLocal(STORAGE_KEYS.BOT_COMMANDS, next);
+  window.dispatchEvent(new CustomEvent('mpq-bot-commands-changed', { detail: next }));
+
+  try {
+    await setDoc(doc(db, 'bot_commands', docId), payload);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `bot_commands/${docId}`);
+    throw err;
+  }
+
+  await syncTelegramBotTemplates(next);
+  return payload;
+}
+
+export async function resetBotCommandConfig(command: string) {
+  const docId = getBotCommandDocId(command);
+  const cached = getLocal<Record<string, BotCommandConfig>>(STORAGE_KEYS.BOT_COMMANDS, {});
+  const next = { ...cached };
+  delete next[command];
+  setLocal(STORAGE_KEYS.BOT_COMMANDS, next);
+  window.dispatchEvent(new CustomEvent('mpq-bot-commands-changed', { detail: next }));
+
+  try {
+    await deleteDoc(doc(db, 'bot_commands', docId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `bot_commands/${docId}`);
+  }
+
+  await syncTelegramBotTemplates(next);
+}
+
+export async function resetAllBotCommands(commands: string[]) {
+  setLocal(STORAGE_KEYS.BOT_COMMANDS, {});
+  window.dispatchEvent(new CustomEvent('mpq-bot-commands-changed', { detail: {} }));
+
+  try {
+    await Promise.all(
+      commands.map((cmd) => deleteDoc(doc(db, 'bot_commands', getBotCommandDocId(cmd))))
+    );
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, 'bot_commands');
+  }
+
+  await syncTelegramBotTemplates({});
 }
